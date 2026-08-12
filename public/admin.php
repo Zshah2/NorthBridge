@@ -42,11 +42,6 @@ if (!in_array($view, $validViews, true)) {
     $view = 'dashboard';
 }
 
-if ($view === 'dashboard') {
-    header('Location: ' . url('/admin'));
-    exit;
-}
-
 $peopleIdRaw = trim((string)($_GET['id'] ?? ''));
 $peopleId = ctype_digit($peopleIdRaw) ? (int)$peopleIdRaw : null;
 
@@ -104,6 +99,79 @@ function schedule_conflicts(?string $daysA, ?string $timeA, ?string $daysB, ?str
     return $a !== null && $b !== null && $a[0] < $b[1] && $b[0] < $a[1];
 }
 
+function schedule_time_valid(?string $time): bool
+{
+    $time = trim((string)$time);
+    if ($time === '') {
+        return false;
+    }
+    if (!preg_match('/^\s*(\d{1,2}):(\d{2})\s*-\s*(\d{1,2}):(\d{2})\s*$/', $time, $m)) {
+        return false;
+    }
+    $s = ((int)$m[1]) * 60 + (int)$m[2];
+    $e = ((int)$m[3]) * 60 + (int)$m[4];
+
+    return $e > $s;
+}
+
+function schedule_days_valid(?string $days): bool
+{
+    $days = strtoupper(trim((string)$days));
+    if ($days === '') {
+        return false;
+    }
+
+    return (bool)preg_match('/^[MTWRFSU]+$/', preg_replace('/\s+/', '', $days) ?? '');
+}
+
+/**
+ * @return array{section_id: int, course_id: string, reason: string}|null
+ */
+function admin_find_section_schedule_conflict(
+    PDO $pdo,
+    int $termId,
+    ?string $meetingDays,
+    ?string $meetingTime,
+    ?string $room,
+    ?int $facultyId,
+    ?int $excludeSectionId = null
+): ?array {
+    $meetingDays = trim((string)$meetingDays);
+    $meetingTime = trim((string)$meetingTime);
+    $room = trim((string)$room);
+    if ($meetingDays === '' || $meetingTime === '') {
+        return null;
+    }
+
+    $checks = [];
+    if ($facultyId !== null && $facultyId > 0) {
+        $checks[] = ['faculty', 'SELECT s.section_id, s.course_id, s.meeting_days, s.meeting_time FROM sections s WHERE s.term_id = ? AND s.faculty_id = ?', [$termId, $facultyId]];
+    }
+    if ($room !== '') {
+        $checks[] = ['room', 'SELECT s.section_id, s.course_id, s.meeting_days, s.meeting_time FROM sections s WHERE s.term_id = ? AND TRIM(COALESCE(s.room, "")) = ?', [$termId, $room]];
+    }
+
+    foreach ($checks as [$reason, $sql, $params]) {
+        if ($excludeSectionId !== null && $excludeSectionId > 0) {
+            $sql .= ' AND s.section_id <> ?';
+            $params[] = $excludeSectionId;
+        }
+        $st = $pdo->prepare($sql);
+        $st->execute($params);
+        foreach ($st->fetchAll(PDO::FETCH_ASSOC) as $row) {
+            if (schedule_conflicts($meetingDays, $meetingTime, $row['meeting_days'] ?? null, $row['meeting_time'] ?? null)) {
+                return [
+                    'section_id' => (int)$row['section_id'],
+                    'course_id' => (string)($row['course_id'] ?? ''),
+                    'reason' => $reason,
+                ];
+            }
+        }
+    }
+
+    return null;
+}
+
 // POST actions
 if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
     if ($isViewer) {
@@ -111,7 +179,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         exit;
     }
     if ($isLimited) {
-        $blocked = ['grade_upsert', 'people_scr_upsert', 'catalog_course_save', 'catalog_prereqs_save', 'term_registration_save', 'auth_password_reset', 'auth_login_save', 'auth_email_save', 'auth_user_active', 'reg_promote'];
+        $blocked = ['grade_upsert', 'people_scr_upsert', 'catalog_course_save', 'catalog_prereqs_save', 'section_save', 'term_registration_save', 'auth_password_reset', 'auth_login_save', 'auth_email_save', 'auth_user_active', 'reg_promote'];
         $act = (string)($_POST['action'] ?? '');
         if (in_array($act, $blocked, true)) {
             header('Location: ' . url('/admin.php?view=' . rawurlencode($view) . '&msg=forbidden'));
@@ -750,6 +818,92 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         exit;
     }
 
+    if ($action === 'section_save' && $isAdmin) {
+        $termId = isset($_POST['term_id']) && ctype_digit((string)$_POST['term_id']) ? (int)$_POST['term_id'] : null;
+        $courseId = strtoupper(trim((string)($_POST['course_id'] ?? '')));
+        $facultyRaw = trim((string)($_POST['faculty_id'] ?? ''));
+        $facultyId = ($facultyRaw !== '' && ctype_digit($facultyRaw)) ? (int)$facultyRaw : null;
+        $meetingDays = strtoupper(trim((string)($_POST['meeting_days'] ?? '')));
+        $meetingTime = trim((string)($_POST['meeting_time'] ?? ''));
+        $room = trim((string)($_POST['room'] ?? ''));
+        $capacity = isset($_POST['capacity']) && is_numeric((string)$_POST['capacity']) ? (int)$_POST['capacity'] : null;
+
+        $redirectBase = url('/admin.php?view=courses' . ($termId !== null ? '&term_id=' . $termId : ''));
+
+        if ($termId === null || $courseId === '' || $capacity === null || $capacity < 1) {
+            header('Location: ' . $redirectBase . '&msg=section_invalid');
+            exit;
+        }
+
+        $tchk = $pdo->prepare('SELECT 1 FROM terms WHERE term_id = ? LIMIT 1');
+        $tchk->execute([$termId]);
+        if (!$tchk->fetchColumn()) {
+            header('Location: ' . $redirectBase . '&msg=section_invalid');
+            exit;
+        }
+
+        $cchk = $pdo->prepare('SELECT 1 FROM courses WHERE course_id = ? LIMIT 1');
+        $cchk->execute([$courseId]);
+        if (!$cchk->fetchColumn()) {
+            header('Location: ' . $redirectBase . '&msg=section_invalid');
+            exit;
+        }
+
+        if ($facultyId !== null) {
+            $fchk = $pdo->prepare('SELECT 1 FROM faculty WHERE faculty_id = ? LIMIT 1');
+            $fchk->execute([$facultyId]);
+            if (!$fchk->fetchColumn()) {
+                $facultyId = null;
+            }
+        }
+
+        $hasDays = $meetingDays !== '';
+        $hasTime = $meetingTime !== '';
+        if ($hasDays xor $hasTime) {
+            header('Location: ' . $redirectBase . '&msg=section_invalid');
+            exit;
+        }
+        if ($hasDays && !schedule_days_valid($meetingDays)) {
+            header('Location: ' . $redirectBase . '&msg=section_invalid');
+            exit;
+        }
+        if ($hasTime && !schedule_time_valid($meetingTime)) {
+            header('Location: ' . $redirectBase . '&msg=section_invalid');
+            exit;
+        }
+
+        if ($hasDays && $hasTime) {
+            $conflict = admin_find_section_schedule_conflict($pdo, $termId, $meetingDays, $meetingTime, $room !== '' ? $room : null, $facultyId);
+            if ($conflict !== null) {
+                $reason = ($conflict['reason'] ?? '') === 'room' ? 'room' : 'instructor';
+                header('Location: ' . $redirectBase . '&msg=section_conflict&conflict_reason=' . rawurlencode($reason) . '&conflict_course=' . rawurlencode((string)($conflict['course_id'] ?? '')));
+                exit;
+            }
+        }
+
+        try {
+            $pdo->prepare('
+              INSERT INTO sections (course_id, term_id, faculty_id, meeting_days, meeting_time, room, capacity)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            ')->execute([
+                $courseId,
+                $termId,
+                $facultyId,
+                $hasDays ? $meetingDays : null,
+                $hasTime ? $meetingTime : null,
+                $room !== '' ? $room : null,
+                $capacity,
+            ]);
+        } catch (Throwable) {
+            header('Location: ' . $redirectBase . '&msg=section_invalid');
+            exit;
+        }
+        $newSectionId = (int)$pdo->lastInsertId();
+        admin_audit($pdo, 'section_save', $courseId . ' section #' . $newSectionId . ' term ' . $termId);
+        header('Location: ' . $redirectBase . '&msg=section_saved&highlight_section=' . $newSectionId);
+        exit;
+    }
+
     if ($action === 'catalog_prereqs_save' && $isAdmin) {
         $cid = strtoupper(trim((string)($_POST['course_id'] ?? '')));
         $ids = $_POST['prereq_ids'] ?? [];
@@ -1198,6 +1352,53 @@ $dash = [
     'chart_status_values' => [],
     'chart_status_colors' => [],
 ];
+$notifPreviews = [
+    'student_email' => [
+        'table' => 'users ⋈ students',
+        'title' => 'Students missing email',
+        'total' => 0,
+        'columns' => ['user_id' => 'user_id', 'name' => 'name', 'email' => 'email'],
+        'rows' => [],
+        'href' => url('/admin.php?view=schedule&q=%40northbridge.edu'),
+        'empty' => 'SELECT returned 0 rows.',
+    ],
+    'student_phone' => [
+        'table' => 'users ⋈ students',
+        'title' => 'Students missing phone',
+        'total' => 0,
+        'columns' => ['user_id' => 'user_id', 'name' => 'name', 'phone_number' => 'phone'],
+        'rows' => [],
+        'href' => url('/admin.php?view=schedule&q=%28'),
+        'empty' => 'SELECT returned 0 rows.',
+    ],
+    'faculty_email' => [
+        'table' => 'faculty ⋈ users',
+        'title' => 'Faculty missing email',
+        'total' => 0,
+        'columns' => ['faculty_id' => 'faculty_id', 'name' => 'name', 'email' => 'email'],
+        'rows' => [],
+        'href' => url('/admin.php?view=schedule&q=%40northbridge.edu'),
+        'empty' => 'SELECT returned 0 rows.',
+    ],
+    'faculty_phone' => [
+        'table' => 'faculty ⋈ users',
+        'title' => 'Faculty missing phone',
+        'total' => 0,
+        'columns' => ['faculty_id' => 'faculty_id', 'name' => 'name', 'phone_number' => 'phone'],
+        'rows' => [],
+        'href' => url('/admin.php?view=schedule&q=%28'),
+        'empty' => 'SELECT returned 0 rows.',
+    ],
+    'holds' => [
+        'table' => 'student_holds',
+        'title' => 'Active registration holds',
+        'total' => 0,
+        'columns' => ['student_id' => 'student_id', 'hold_type' => 'hold_type', 'note' => 'note'],
+        'rows' => [],
+        'href' => url('/admin.php?view=holds#admin-active-holds-list'),
+        'empty' => 'No active holds.',
+    ],
+];
 try {
     $counts['students'] = (int)$pdo->query('SELECT COUNT(*) FROM students')->fetchColumn();
     $counts['faculty'] = (int)$pdo->query('SELECT COUNT(*) FROM faculty')->fetchColumn();
@@ -1226,6 +1427,70 @@ try {
       FROM faculty f
       WHERE f.phone_number IS NULL OR TRIM(f.phone_number) = ""
     ')->fetchColumn();
+
+    $notifPreviews['student_email']['total'] = (int)$dash['students_missing_email'];
+    $notifPreviews['student_email']['rows'] = $pdo->query('
+      SELECT
+        u.user_id,
+        CONCAT(u.first_name, " ", u.last_name) AS name,
+        u.email
+      FROM users u
+      INNER JOIN students s ON s.student_id = u.user_id
+      WHERE u.email IS NULL OR TRIM(u.email) = ""
+      ORDER BY u.user_id
+      LIMIT 5
+    ')->fetchAll(PDO::FETCH_ASSOC);
+
+    $notifPreviews['student_phone']['total'] = (int)$dash['students_missing_phone'];
+    $notifPreviews['student_phone']['rows'] = $pdo->query('
+      SELECT
+        u.user_id,
+        CONCAT(u.first_name, " ", u.last_name) AS name,
+        u.phone_number
+      FROM users u
+      INNER JOIN students s ON s.student_id = u.user_id
+      WHERE u.phone_number IS NULL OR TRIM(u.phone_number) = ""
+      ORDER BY u.user_id
+      LIMIT 5
+    ')->fetchAll(PDO::FETCH_ASSOC);
+
+    $notifPreviews['faculty_email']['total'] = (int)$dash['faculty_missing_email'];
+    $notifPreviews['faculty_email']['rows'] = $pdo->query('
+      SELECT
+        f.faculty_id,
+        CONCAT(u.first_name, " ", u.last_name) AS name,
+        f.email
+      FROM faculty f
+      INNER JOIN users u ON u.user_id = f.faculty_id
+      WHERE f.email IS NULL OR TRIM(f.email) = ""
+      ORDER BY f.faculty_id
+      LIMIT 5
+    ')->fetchAll(PDO::FETCH_ASSOC);
+
+    $notifPreviews['faculty_phone']['total'] = (int)$dash['faculty_missing_phone'];
+    $notifPreviews['faculty_phone']['rows'] = $pdo->query('
+      SELECT
+        f.faculty_id,
+        CONCAT(u.first_name, " ", u.last_name) AS name,
+        f.phone_number
+      FROM faculty f
+      INNER JOIN users u ON u.user_id = f.faculty_id
+      WHERE f.phone_number IS NULL OR TRIM(f.phone_number) = ""
+      ORDER BY f.faculty_id
+      LIMIT 5
+    ')->fetchAll(PDO::FETCH_ASSOC);
+
+    $notifPreviews['holds']['total'] = (int)$counts['holds_active'];
+    $notifPreviews['holds']['rows'] = $pdo->query('
+      SELECT
+        h.student_id,
+        h.hold_type,
+        LEFT(COALESCE(h.note, ""), 48) AS note
+      FROM student_holds h
+      WHERE h.is_active = 1
+      ORDER BY h.created_at DESC
+      LIMIT 5
+    ')->fetchAll(PDO::FETCH_ASSOC);
 
     // Current-term operational stats (if we have a term)
     if ($currentTermId !== null) {
@@ -1428,6 +1693,30 @@ $adminNotificationCount = (int)($dash['students_missing_email'] ?? 0)
     + (int)($dash['students_missing_phone'] ?? 0)
     + (int)($dash['faculty_missing_phone'] ?? 0)
     + (int)($counts['holds_active'] ?? 0);
+$adminNotifBellPreviews = array_values(array_filter(
+    [
+        ($notifPreviews['student_email']['total'] ?? 0) > 0 ? $notifPreviews['student_email'] : null,
+        ($notifPreviews['faculty_email']['total'] ?? 0) > 0 ? $notifPreviews['faculty_email'] : null,
+        ($notifPreviews['student_phone']['total'] ?? 0) > 0 ? $notifPreviews['student_phone'] : null,
+        ($notifPreviews['faculty_phone']['total'] ?? 0) > 0 ? $notifPreviews['faculty_phone'] : null,
+        ($notifPreviews['holds']['total'] ?? 0) > 0 ? $notifPreviews['holds'] : null,
+    ],
+    static fn ($p) => $p !== null
+));
+$adminNotifEmailGapPreviews = array_values(array_filter(
+    [
+        ($notifPreviews['student_email']['total'] ?? 0) > 0 ? $notifPreviews['student_email'] : null,
+        ($notifPreviews['faculty_email']['total'] ?? 0) > 0 ? $notifPreviews['faculty_email'] : null,
+    ],
+    static fn ($p) => $p !== null
+));
+$adminNotifPhoneGapPreviews = array_values(array_filter(
+    [
+        ($notifPreviews['student_phone']['total'] ?? 0) > 0 ? $notifPreviews['student_phone'] : null,
+        ($notifPreviews['faculty_phone']['total'] ?? 0) > 0 ? $notifPreviews['faculty_phone'] : null,
+    ],
+    static fn ($p) => $p !== null
+));
 $adminUserInitials = '';
 {
     $u = trim($user);
@@ -1586,7 +1875,7 @@ function nav_group_label(string $label): string
     <div class="mx-auto max-w-[min(100vw-2rem,110rem)] px-3 py-3 sm:px-5">
       <div class="flex flex-col gap-3 lg:flex-row lg:items-center lg:gap-4">
         <div class="flex min-w-0 flex-1 items-center justify-between gap-3 lg:justify-start lg:gap-4">
-          <a href="<?= htmlspecialchars(url('/admin')) ?>" class="flex min-w-0 items-center gap-3">
+          <a href="<?= htmlspecialchars(url('/admin.php?view=dashboard')) ?>" class="flex min-w-0 items-center gap-3">
             <img
               src="<?= htmlspecialchars(url('/assets/img/northbridge_university_icon.svg')) ?>"
               alt=""
@@ -1633,18 +1922,47 @@ function nav_group_label(string $label): string
 
         <div class="flex flex-wrap items-center justify-end gap-2 sm:gap-3">
           <?php require __DIR__ . '/../app/views/partials/theme_toggle.php'; ?>
-          <a
-            href="<?= htmlspecialchars(url('/admin')) ?>"
-            class="relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
-            title="Alerts and items needing attention"
-          >
-            <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
-              <path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 00-3 0v.68C7.64 5.36 6 7.92 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-            </svg>
-            <?php if ($adminNotificationCount > 0): ?>
-              <span class="absolute -right-1 -top-1 grid min-h-[1.25rem] min-w-[1.25rem] place-items-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white"><?= $adminNotificationCount > 99 ? '99+' : (int)$adminNotificationCount ?></span>
+          <div class="group relative admin-notif-wrap" tabindex="0" data-notif-wrap>
+            <a
+              href="<?= htmlspecialchars(url('/admin.php?view=dashboard#admin-alerts')) ?>"
+              class="relative inline-flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 bg-white text-slate-700 shadow-sm hover:bg-slate-50 dark:border-slate-700 dark:bg-slate-900 dark:text-slate-200 dark:hover:bg-slate-800"
+              title="Alerts and items needing attention — hover or tap for live database preview"
+              aria-describedby="admin-notif-bell-preview"
+              data-notif-trigger
+            >
+              <svg class="h-5 w-5" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                <path d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11c0-3.07-1.64-5.64-4.5-6.32V4a1.5 1.5 0 00-3 0v.68C7.64 5.36 6 7.92 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+              </svg>
+              <?php if ($adminNotificationCount > 0): ?>
+                <span class="absolute -right-1 -top-1 grid min-h-[1.25rem] min-w-[1.25rem] place-items-center rounded-full bg-rose-600 px-1 text-[10px] font-bold text-white"><?= $adminNotificationCount > 99 ? '99+' : (int)$adminNotificationCount ?></span>
+              <?php endif; ?>
+            </a>
+            <?php if ($adminNotifBellPreviews !== []): ?>
+              <?php
+                $previews = $adminNotifBellPreviews;
+                $panelClass = 'right-0 top-full w-[min(22rem,92vw)]';
+              ?>
+              <div id="admin-notif-bell-preview">
+                <?php require __DIR__ . '/../app/views/partials/admin_notif_hover_panel.php'; ?>
+              </div>
+            <?php else: ?>
+              <?php
+                $previews = [[
+                    'table' => 'information_schema',
+                    'title' => 'All clear',
+                    'total' => 0,
+                    'columns' => ['status' => 'status'],
+                    'rows' => [['status' => 'No open alerts']],
+                    'href' => url('/admin.php?view=dashboard#admin-alerts'),
+                    'empty' => 'No open alerts.',
+                ]];
+                $panelClass = 'right-0 top-full w-[min(18rem,92vw)]';
+              ?>
+              <div id="admin-notif-bell-preview">
+                <?php require __DIR__ . '/../app/views/partials/admin_notif_hover_panel.php'; ?>
+              </div>
             <?php endif; ?>
-          </a>
+          </div>
 
           <div class="flex max-w-[14rem] items-center gap-2 rounded-xl border border-slate-200 bg-slate-50/80 px-2 py-1.5 dark:border-slate-700 dark:bg-slate-900/80">
             <span class="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-indigo-600 to-sky-600 text-xs font-bold text-white"><?= htmlspecialchars($adminUserInitials) ?></span>
@@ -1689,18 +2007,9 @@ function nav_group_label(string $label): string
       </div>
       <div class="flex-1 overflow-y-auto px-5 py-5">
         <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Navigation</div>
-        <div class="mt-4">
-          <?php
-          $admin_nav_active = match (true) {
-              $view === 'people' => 'lookup',
-              $view === 'schedule' => 'schedule',
-              $view === 'holds' => 'holds',
-              default => '',
-          };
-          $admin_nav_layout = 'stack';
-          require view_path('partials/admin_portal_nav.php');
-          ?>
-        </div>
+        <nav class="mt-4">
+          <?php require view_path('partials/admin_full_nav.php'); ?>
+        </nav>
         <form method="post" action="<?= htmlspecialchars(url('/logout.php')) ?>" class="mt-4">
           <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>" />
           <button type="submit" class="block w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-rose-700 ring-1 ring-rose-200 hover:bg-rose-50 dark:text-rose-300 dark:ring-rose-800 dark:hover:bg-rose-950/50">Log out</button>
@@ -1737,35 +2046,39 @@ function nav_group_label(string $label): string
         'hold_added' => ['success', 'Hold added.'],
         'grade_saved' => ['success', 'Transcript grade saved.'],
         'grade_invalid' => ['error', 'Grade was not saved — check course, term, and letter grade.'],
+        'section_saved' => ['success', 'New section created and added to the schedule.'],
+        'section_invalid' => ['error', 'Could not create section — pick course and term, capacity ≥ 1, and use matching days (MWF/TR) + time (10:00-11:15) together or leave both blank.'],
+        'section_conflict' => ['error', 'Schedule conflict — that instructor or room already has a class at overlapping days/times this term.'],
     ];
     if ($flashMsg !== '' && isset($flashMap[$flashMsg])) {
         [$ftone, $ftext] = $flashMap[$flashMsg];
-        if ($ftone === 'error') {
-            $fcls = 'border-rose-200 bg-rose-50 text-rose-950 dark:border-rose-800 dark:bg-rose-950/50 dark:text-rose-100';
-        } elseif ($ftone === 'success') {
-            $fcls = 'border-emerald-200 bg-emerald-50 text-emerald-950 dark:border-emerald-800 dark:bg-emerald-950/50 dark:text-emerald-100';
-        } else {
-            $fcls = 'border-amber-200 bg-amber-50 text-amber-950 dark:border-amber-800 dark:bg-amber-950/50 dark:text-amber-100';
+        if ($flashMsg === 'section_conflict') {
+            $conflictCourse = trim((string)($_GET['conflict_course'] ?? ''));
+            $conflictReason = trim((string)($_GET['conflict_reason'] ?? ''));
+            if ($conflictCourse !== '') {
+                $ftext .= ' Conflicts with ' . $conflictCourse . '.';
+            }
+            if ($conflictReason === 'room') {
+                $ftext = 'Room schedule conflict — that room already has a class at overlapping days/times this term.' . ($conflictCourse !== '' ? (' Conflicts with ' . $conflictCourse . '.') : '');
+            }
         }
-        echo '<div class="mb-6 rounded-2xl border ' . $fcls . ' px-4 py-3 text-sm font-medium">' . htmlspecialchars($ftext) . '</div>';
+        if ($ftone === 'error') {
+            $fcls = ui_flash('error');
+        } elseif ($ftone === 'success') {
+            $fcls = ui_flash('success');
+        } else {
+            $fcls = ui_flash('warn');
+        }
+        echo '<div class="mb-6 ' . $fcls . '">' . htmlspecialchars($ftext) . '</div>';
     }
     ?>
     <div class="min-w-0">
       <aside id="adminSidebar" class="fixed left-0 top-[6.25rem] z-20 hidden h-[calc(100vh-6.25rem)] w-[18rem] overflow-y-auto border-r border-slate-200 bg-white px-4 py-6 transition-transform duration-200 ease-out dark:border-slate-800 dark:bg-slate-900 lg:block lg:top-[5.5rem] lg:h-[calc(100vh-5.5rem)]">
         <div class="pr-1">
           <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Navigation</div>
-          <div class="mt-4">
-            <?php
-            $admin_nav_active = match (true) {
-                $view === 'people' => 'lookup',
-                $view === 'schedule' => 'schedule',
-                $view === 'holds' => 'holds',
-                default => '',
-            };
-            $admin_nav_layout = 'stack';
-            require view_path('partials/admin_portal_nav.php');
-            ?>
-          </div>
+          <nav class="mt-4">
+            <?php require view_path('partials/admin_full_nav.php'); ?>
+          </nav>
           <form method="post" action="<?= htmlspecialchars(url('/logout.php')) ?>" class="mt-4">
             <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>" />
             <button type="submit" class="block w-full rounded-xl px-3 py-2 text-left text-sm font-semibold text-rose-700 ring-1 ring-rose-200 hover:bg-rose-50 dark:text-rose-300 dark:ring-rose-800 dark:hover:bg-rose-950/50">Log out</button>
@@ -1785,36 +2098,63 @@ function nav_group_label(string $label): string
         <?php if ($view === 'dashboard'): ?>
           <div class="flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
             <div>
-              <h1 class="text-2xl font-semibold text-slate-900 dark:text-white">Dashboard</h1>
-              <p class="mt-2 text-sm text-slate-600">Operations snapshot — enrollment activity, data quality, and this term’s busiest sections.</p>
+              <h1 class="<?= htmlspecialchars(ui_h1()) ?>">Dashboard</h1>
+              <p class="mt-2 <?= htmlspecialchars(ui_muted()) ?>">Operations snapshot — enrollment activity, data quality, and this term’s busiest sections.</p>
             </div>
             <div class="flex flex-wrap gap-2">
-              <a class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" href="<?= htmlspecialchars(url('/admin.php?view=registration')) ?>">Registration</a>
-              <a class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" href="<?= htmlspecialchars(url('/admin/holds')) ?>" title="Look up holds for one student by ID">Student hold lookup</a>
+              <a class="<?= htmlspecialchars(ui_btn_secondary()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=registration')) ?>">Registration</a>
+              <a class="<?= htmlspecialchars(ui_btn_secondary()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=holds')) ?>" title="Look up holds for one student by ID">Student hold lookup</a>
             </div>
           </div>
 
-          <div id="admin-alerts" class="mt-6 scroll-mt-28 rounded-2xl border border-amber-200 bg-amber-50/90 p-4 shadow-sm">
+          <div id="admin-alerts" class="mt-6 scroll-mt-28 rounded-2xl border border-amber-200 bg-amber-50/90 p-4 shadow-sm dark:border-amber-800 dark:bg-amber-950/40">
             <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <div class="text-sm font-semibold text-amber-950">Alerts &amp; notices</div>
+              <div class="text-sm font-semibold text-amber-950 dark:text-amber-100">Alerts &amp; notices</div>
               <div class="flex flex-wrap gap-2 text-xs">
-                <a class="<?= htmlspecialchars(ui_alert_pill()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=schedule&q=%40northbridge.edu')) ?>">Email gaps (<?= (int)($dash['students_missing_email'] ?? 0) + (int)($dash['faculty_missing_email'] ?? 0) ?>)</a>
-                <a class="<?= htmlspecialchars(ui_alert_pill()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=schedule&q=%28')) ?>">Phone checks (<?= (int)($dash['students_missing_phone'] ?? 0) + (int)($dash['faculty_missing_phone'] ?? 0) ?>)</a>
-                <a class="<?= htmlspecialchars(ui_alert_pill()) ?>" title="Open the full list of active registration holds" href="<?= htmlspecialchars(url('/admin.php?view=holds#admin-active-holds-list')) ?>">Active holds (<?= (int)$counts['holds_active'] ?>)</a>
+                <div class="group relative admin-notif-wrap" tabindex="0" data-notif-wrap>
+                  <a class="<?= htmlspecialchars(ui_alert_pill()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=schedule&q=%40northbridge.edu')) ?>">Email gaps (<?= (int)($dash['students_missing_email'] ?? 0) + (int)($dash['faculty_missing_email'] ?? 0) ?>)</a>
+                  <?php if ($adminNotifEmailGapPreviews !== []): ?>
+                    <?php
+                      $previews = $adminNotifEmailGapPreviews;
+                      $panelClass = 'left-0 top-full z-50 w-[min(22rem,92vw)] sm:left-auto sm:right-0';
+                    ?>
+                    <?php require __DIR__ . '/../app/views/partials/admin_notif_hover_panel.php'; ?>
+                  <?php endif; ?>
+                </div>
+                <div class="group relative admin-notif-wrap" tabindex="0" data-notif-wrap>
+                  <a class="<?= htmlspecialchars(ui_alert_pill()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=schedule&q=%28')) ?>">Phone checks (<?= (int)($dash['students_missing_phone'] ?? 0) + (int)($dash['faculty_missing_phone'] ?? 0) ?>)</a>
+                  <?php if ($adminNotifPhoneGapPreviews !== []): ?>
+                    <?php
+                      $previews = $adminNotifPhoneGapPreviews;
+                      $panelClass = 'left-0 top-full z-50 w-[min(22rem,92vw)] sm:left-auto sm:right-0';
+                    ?>
+                    <?php require __DIR__ . '/../app/views/partials/admin_notif_hover_panel.php'; ?>
+                  <?php endif; ?>
+                </div>
+                <div class="group relative admin-notif-wrap" tabindex="0" data-notif-wrap>
+                  <a class="<?= htmlspecialchars(ui_alert_pill()) ?>" title="Open the full list of active registration holds" href="<?= htmlspecialchars(url('/admin.php?view=holds#admin-active-holds-list')) ?>">Active holds (<?= (int)$counts['holds_active'] ?>)</a>
+                  <?php if (($notifPreviews['holds']['total'] ?? 0) > 0): ?>
+                    <?php
+                      $previews = [$notifPreviews['holds']];
+                      $panelClass = 'left-0 top-full z-50 w-[min(22rem,92vw)] sm:left-auto sm:right-0';
+                    ?>
+                    <?php require __DIR__ . '/../app/views/partials/admin_notif_hover_panel.php'; ?>
+                  <?php endif; ?>
+                </div>
               </div>
             </div>
             <p class="mt-2 text-xs text-amber-900/90">Tip: use the header search to open <strong class="font-semibold">Master schedule</strong> with your query — fastest way to find people by ID, name, email, or phone.</p>
           </div>
 
-          <div class="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+          <div class="mt-6 <?= htmlspecialchars(ui_card('p-5')) ?>">
             <div class="flex flex-col gap-1 sm:flex-row sm:items-end sm:justify-between">
               <div>
-                <div class="text-xs font-semibold uppercase tracking-wide text-slate-500">Current term spotlight</div>
-                <div class="mt-1 text-sm text-slate-600">
+                <div class="<?= htmlspecialchars(ui_label()) ?>">Current term spotlight</div>
+                <div class="mt-1 <?= htmlspecialchars(ui_muted()) ?>">
                   <?= $currentTermCode ? ('Top sections — ' . htmlspecialchars($currentTermCode)) : 'No term configured yet.' ?>
                 </div>
               </div>
-              <a class="text-sm font-semibold text-indigo-700 hover:underline" href="<?= htmlspecialchars(url('/admin.php?view=schedule')) ?>">Open master schedule →</a>
+              <a class="<?= htmlspecialchars(ui_link()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=schedule')) ?>">Open master schedule →</a>
             </div>
 
             <div class="mt-5 grid gap-6 lg:grid-cols-2">
@@ -2164,21 +2504,21 @@ function nav_group_label(string $label): string
               }
           }
           ?>
-          <h1 class="text-2xl font-semibold text-slate-900 dark:text-white">Reports &amp; Analytics</h1>
-          <p class="mt-2 text-sm text-slate-600">Enrollment by section for the current term, CSV export, and links to operational views.</p>
+          <h1 class="<?= htmlspecialchars(ui_h1()) ?>">Reports &amp; Analytics</h1>
+          <p class="mt-2 <?= htmlspecialchars(ui_muted()) ?>">Enrollment by section for the current term, CSV export, and links to operational views.</p>
           <div class="mt-6 flex flex-wrap gap-3">
             <?php if ($isAdmin && $currentTermCode !== null): ?>
-              <a class="rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500" href="<?= htmlspecialchars(url('/admin.php?view=reports&export=enrollment_summary')) ?>">Download enrollment CSV (<?= htmlspecialchars($currentTermCode) ?>)</a>
+              <a class="<?= htmlspecialchars(ui_btn_primary()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=reports&export=enrollment_summary')) ?>">Download enrollment CSV (<?= htmlspecialchars($currentTermCode) ?>)</a>
             <?php endif; ?>
-            <a class="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" href="<?= htmlspecialchars(url('/admin.php?view=dashboard')) ?>">Dashboard charts</a>
-            <a class="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" href="<?= htmlspecialchars(url('/admin.php?view=enrollment')) ?>">Enrollment</a>
-            <a class="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" href="<?= htmlspecialchars(url('/admin.php?view=departments')) ?>">Departments</a>
-            <a class="rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" href="<?= htmlspecialchars(url('/admin.php?view=schedule')) ?>">Master schedule</a>
+            <a class="<?= htmlspecialchars(ui_btn_secondary()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=dashboard')) ?>">Dashboard charts</a>
+            <a class="<?= htmlspecialchars(ui_btn_secondary()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=enrollment')) ?>">Enrollment</a>
+            <a class="<?= htmlspecialchars(ui_btn_secondary()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=departments')) ?>">Departments</a>
+            <a class="<?= htmlspecialchars(ui_btn_secondary()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=schedule')) ?>">Master schedule</a>
           </div>
           <?php if ($isAdmin && $currentTermCode !== null): ?>
-            <div class="mt-8 overflow-x-auto rounded-2xl border border-slate-200 bg-white shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <div class="mt-8 <?= htmlspecialchars(ui_table_wrap()) ?>">
               <table class="min-w-full text-left text-sm">
-                <thead class="border-b border-slate-200 bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+                <thead class="<?= htmlspecialchars(ui_thead()) ?>">
                   <tr>
                     <th class="px-4 py-3">Course</th>
                     <th class="px-4 py-3">Section</th>
@@ -2188,12 +2528,12 @@ function nav_group_label(string $label): string
                     <th class="px-4 py-3">Waitlist</th>
                   </tr>
                 </thead>
-                <tbody class="divide-y divide-slate-200">
+                <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
                   <?php foreach ($reportsEnrollmentRows as $rr): ?>
-                    <tr class="hover:bg-slate-50/70">
+                    <tr class="hover:bg-slate-50/70 dark:hover:bg-slate-800/50">
                       <td class="px-4 py-3">
-                        <div class="font-semibold text-slate-900"><?= htmlspecialchars((string)($rr['course_id'] ?? '')) ?></div>
-                        <div class="text-xs text-slate-600"><?= htmlspecialchars((string)($rr['course_name'] ?? '')) ?></div>
+                        <div class="font-semibold text-slate-900 dark:text-white"><?= htmlspecialchars((string)($rr['course_id'] ?? '')) ?></div>
+                        <div class="text-xs text-slate-600 dark:text-slate-400"><?= htmlspecialchars((string)($rr['course_name'] ?? '')) ?></div>
                       </td>
                       <td class="px-4 py-3 font-mono text-xs">#<?= (int)($rr['section_id'] ?? 0) ?></td>
                       <td class="px-4 py-3"><?= htmlspecialchars((string)($rr['term_code'] ?? '')) ?></td>
@@ -2203,7 +2543,7 @@ function nav_group_label(string $label): string
                     </tr>
                   <?php endforeach; ?>
                   <?php if (!$reportsEnrollmentRows): ?>
-                    <tr><td class="px-4 py-8 text-center text-slate-500" colspan="6">No sections for the current term, or you need admin access to load this table.</td></tr>
+                    <tr><td class="px-4 py-8 text-center <?= htmlspecialchars(ui_muted()) ?>" colspan="6">No sections for the current term, or you need admin access to load this table.</td></tr>
                   <?php endif; ?>
                 </tbody>
               </table>
@@ -2215,8 +2555,8 @@ function nav_group_label(string $label): string
 
         <?php elseif ($view === 'catalog'): ?>
           <?php if (!$isAdmin): ?>
-            <h1 class="text-2xl font-semibold text-slate-900 dark:text-white">Course catalog</h1>
-            <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">Catalog editing requires an administrator role.</div>
+            <h1 class="<?= htmlspecialchars(ui_h1()) ?>">Course catalog</h1>
+            <div class="mt-4 <?= htmlspecialchars(ui_flash('warn')) ?>">Catalog editing requires an administrator role.</div>
           <?php else: ?>
             <?php
             $catalogFlash = trim((string)($_GET['msg'] ?? ''));
@@ -2227,8 +2567,7 @@ function nav_group_label(string $label): string
             ];
             if ($catalogFlash !== '' && isset($catalogFlashMap[$catalogFlash])) {
                 [$ct, $ctxt] = $catalogFlashMap[$catalogFlash];
-                $ccls = $ct === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-950' : 'border-rose-200 bg-rose-50 text-rose-950';
-                echo '<div class="mb-6 rounded-2xl border ' . $ccls . ' px-4 py-3 text-sm font-medium">' . htmlspecialchars($ctxt) . '</div>';
+                echo '<div class="mb-6 ' . ui_flash($ct === 'success' ? 'success' : 'error') . '">' . htmlspecialchars($ctxt) . '</div>';
             }
             $catalogCourses = [];
             try {
@@ -2274,8 +2613,8 @@ function nav_group_label(string $label): string
 
         <?php elseif ($view === 'terms'): ?>
           <?php if (!$isAdmin): ?>
-            <h1 class="text-2xl font-semibold text-slate-900 dark:text-white">Terms</h1>
-            <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">Term registration settings require an administrator role.</div>
+            <h1 class="<?= htmlspecialchars(ui_h1()) ?>">Terms</h1>
+            <div class="mt-4 <?= htmlspecialchars(ui_flash('warn')) ?>">Term registration settings require an administrator role.</div>
           <?php else: ?>
             <?php
             $termFlash = trim((string)($_GET['msg'] ?? ''));
@@ -2286,8 +2625,7 @@ function nav_group_label(string $label): string
             ];
             if ($termFlash !== '' && isset($termFlashMap[$termFlash])) {
                 [$tt, $ttxt] = $termFlashMap[$termFlash];
-                $tcls = $tt === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-950' : 'border-rose-200 bg-rose-50 text-rose-950';
-                echo '<div class="mb-6 rounded-2xl border ' . $tcls . ' px-4 py-3 text-sm font-medium">' . htmlspecialchars($ttxt) . '</div>';
+                echo '<div class="mb-6 ' . ui_flash($tt === 'success' ? 'success' : 'error') . '">' . htmlspecialchars($ttxt) . '</div>';
             }
             $termsRows = [];
             try {
@@ -2303,7 +2641,7 @@ function nav_group_label(string $label): string
                     $tr['registration_end'] = null;
                 }
                 unset($tr);
-                echo '<div class="mb-6 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">Registration window columns are missing — run migrations, then save again.</div>';
+                echo '<div class="mb-6 ' . ui_flash('warn') . '">Registration window columns are missing — run migrations, then save again.</div>';
             }
             require __DIR__ . '/../app/views/pages/admin/terms_registration.php';
             ?>
@@ -2328,8 +2666,8 @@ function nav_group_label(string $label): string
 
         <?php elseif ($view === 'accounts'): ?>
           <?php if (!$isAdmin): ?>
-            <h1 class="text-2xl font-semibold text-slate-900 dark:text-white">Accounts</h1>
-            <div class="mt-4 rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-950">Account management requires an administrator role.</div>
+            <h1 class="<?= htmlspecialchars(ui_h1()) ?>">Accounts</h1>
+            <div class="mt-4 <?= htmlspecialchars(ui_flash('warn')) ?>">Account management requires an administrator role.</div>
           <?php else: ?>
             <?php
             $acctFlash = trim((string)($_GET['msg'] ?? ''));
@@ -2348,8 +2686,7 @@ function nav_group_label(string $label): string
             ];
             if ($acctFlash !== '' && isset($acctFlashMap[$acctFlash])) {
                 [$at, $atxt] = $acctFlashMap[$acctFlash];
-                $acls = $at === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-950' : 'border-rose-200 bg-rose-50 text-rose-950';
-                echo '<div class="mb-6 rounded-2xl border ' . $acls . ' px-4 py-3 text-sm font-medium">' . htmlspecialchars($atxt) . '</div>';
+                echo '<div class="mb-6 ' . ui_flash($at === 'success' ? 'success' : 'error') . '">' . htmlspecialchars($atxt) . '</div>';
             }
             $authRows = [];
             try {
@@ -2373,15 +2710,15 @@ function nav_group_label(string $label): string
           <?php endif; ?>
 
         <?php elseif ($view === 'messages'): ?>
-          <h1 class="text-2xl font-semibold text-slate-900 dark:text-white">Messages</h1>
-          <p class="mt-2 max-w-2xl text-sm text-slate-600">In-app messaging is not enabled yet. Use official email for registrar communications.</p>
-          <div class="mt-6 rounded-2xl border border-dashed border-slate-300 bg-white p-8 text-center text-sm text-slate-500">
+          <h1 class="<?= htmlspecialchars(ui_h1()) ?>">Messages</h1>
+          <p class="mt-2 max-w-2xl <?= htmlspecialchars(ui_muted()) ?>">In-app messaging is not enabled yet. Use official email for registrar communications.</p>
+          <div class="mt-6 <?= htmlspecialchars(ui_empty()) ?>">
             Coming soon — optional inbox tied to holds and registration events.
           </div>
 
         <?php elseif ($view === 'settings'): ?>
-          <h1 class="text-2xl font-semibold text-slate-900 dark:text-white">Settings</h1>
-          <p class="mt-2 text-sm text-slate-600">Your login and shortcuts.</p>
+          <h1 class="<?= htmlspecialchars(ui_h1()) ?>">Settings</h1>
+          <p class="mt-2 <?= htmlspecialchars(ui_muted()) ?>">Your login and shortcuts.</p>
           <?php
             $settingsFlash = trim((string)($_GET['msg'] ?? ''));
             $settingsFlashMap = [
@@ -2396,23 +2733,22 @@ function nav_group_label(string $label): string
             ];
             if ($settingsFlash !== '' && isset($settingsFlashMap[$settingsFlash])) {
                 [$st, $stxt] = $settingsFlashMap[$settingsFlash];
-                $scls = $st === 'success' ? 'border-emerald-200 bg-emerald-50 text-emerald-950' : 'border-rose-200 bg-rose-50 text-rose-950';
-                echo '<div class="mb-6 rounded-2xl border ' . $scls . ' px-4 py-3 text-sm font-medium">' . htmlspecialchars($stxt) . '</div>';
+                echo '<div class="mb-6 ' . ui_flash($st === 'success' ? 'success' : 'error') . '">' . htmlspecialchars($stxt) . '</div>';
             }
             $selfAccount = auth_fetch_user_by_id((int)($_SESSION['auth']['id'] ?? 0)) ?? [];
             require __DIR__ . '/../app/views/pages/admin/account_settings.php';
           ?>
-          <h2 class="mt-10 text-lg font-semibold text-slate-900">Shortcuts</h2>
+          <h2 class="mt-10 text-lg font-semibold text-slate-900 dark:text-white">Shortcuts</h2>
           <ul class="mt-3 space-y-3 text-sm">
-            <li><a class="font-semibold text-indigo-700 hover:underline" href="<?= htmlspecialchars(url('/admin.php?view=holds')) ?>">Active holds directory</a></li>
-            <li><a class="font-semibold text-indigo-700 hover:underline" href="<?= htmlspecialchars(url('/admin/holds')) ?>">Legacy holds page</a></li>
-            <li><a class="font-semibold text-indigo-700 hover:underline" href="<?= htmlspecialchars(url('/')) ?>">Public site home</a></li>
+            <li><a class="<?= htmlspecialchars(ui_link()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=holds')) ?>">Active holds directory</a></li>
+            <li><a class="<?= htmlspecialchars(ui_link()) ?>" href="<?= htmlspecialchars(url('/admin/holds')) ?>">Legacy holds page</a></li>
+            <li><a class="<?= htmlspecialchars(ui_link()) ?>" href="<?= htmlspecialchars(url('/')) ?>">Public site home</a></li>
             <?php if ($isAdmin): ?>
-              <li><a class="font-semibold text-indigo-700 hover:underline" href="<?= htmlspecialchars(url('/admin.php?view=accounts')) ?>">Manage all accounts</a></li>
+              <li><a class="<?= htmlspecialchars(ui_link()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=accounts')) ?>">Manage all accounts</a></li>
             <?php endif; ?>
-            <li><a class="font-semibold text-indigo-700 hover:underline" href="<?= htmlspecialchars(url('/login.php')) ?>">Sign-in page</a> <span class="text-slate-500">(sign out first to create another admin)</span></li>
+            <li><a class="<?= htmlspecialchars(ui_link()) ?>" href="<?= htmlspecialchars(url('/login.php')) ?>">Sign-in page</a> <span class="text-slate-500 dark:text-slate-400">(sign out first to create another admin)</span></li>
           </ul>
-          <p class="mt-6 text-xs text-slate-500">Your role: <strong class="font-semibold text-slate-700"><?= htmlspecialchars($roleLabel) ?></strong></p>
+          <p class="mt-6 text-xs text-slate-500 dark:text-slate-400">Your role: <strong class="font-semibold text-slate-700 dark:text-slate-200"><?= htmlspecialchars($roleLabel) ?></strong></p>
 
         <?php elseif ($view === 'people'): ?>
           <?php
@@ -4572,6 +4908,37 @@ function nav_group_label(string $label): string
       document.addEventListener('keydown', function (e) {
         if (e.key !== 'Escape') return;
         closeDrawer();
+      });
+    })();
+
+    (function initNotifTap() {
+      function closeAll(except) {
+        document.querySelectorAll('[data-notif-wrap].notif-open').forEach(function (wrap) {
+          if (wrap !== except) wrap.classList.remove('notif-open');
+        });
+      }
+
+      document.querySelectorAll('[data-notif-wrap]').forEach(function (wrap) {
+        wrap.addEventListener('click', function (e) {
+          if (window.matchMedia('(hover: hover)').matches) return;
+          var trigger = e.target && e.target.closest ? e.target.closest('[data-notif-trigger]') : null;
+          var inPanel = e.target && e.target.closest ? e.target.closest('[role="tooltip"]') : null;
+          if (trigger) {
+            e.preventDefault();
+          }
+          if (!trigger && !inPanel) return;
+          var open = wrap.classList.toggle('notif-open');
+          if (open) closeAll(wrap);
+        });
+      });
+
+      document.addEventListener('click', function (e) {
+        var inside = e.target && e.target.closest ? e.target.closest('[data-notif-wrap]') : null;
+        if (!inside) closeAll(null);
+      });
+
+      document.addEventListener('keydown', function (e) {
+        if (e.key === 'Escape') closeAll(null);
       });
     })();
   </script>

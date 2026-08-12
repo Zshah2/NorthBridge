@@ -46,16 +46,19 @@ $statusBadge = static function (string $status): string {
 };
 ?>
 <?php if ($course === null): ?>
-  <h1 class="text-2xl font-semibold text-slate-900 dark:text-white">Course</h1>
-  <p class="mt-2 text-sm text-slate-600">
+  <h1 class="<?= htmlspecialchars(ui_h1()) ?>">Course</h1>
+  <p class="mt-2 <?= htmlspecialchars(ui_muted()) ?>">
     <?php if ($course_id_param === ''): ?>
       No course was specified.
     <?php else: ?>
       No catalog row found for <span class="font-mono font-semibold"><?= htmlspecialchars($course_id_param) ?></span>.
     <?php endif; ?>
   </p>
-  <p class="mt-4">
-    <a class="text-sm font-semibold text-indigo-700 hover:underline" href="<?= htmlspecialchars(url('/admin.php?view=courses')) ?>">← Back to Courses</a>
+  <p class="mt-4 flex flex-wrap gap-3">
+    <a class="<?= htmlspecialchars(ui_link()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=courses')) ?>">← Back to Courses</a>
+    <?php if ($can_edit_catalog): ?>
+      <a class="<?= htmlspecialchars(ui_link()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=catalog')) ?>">Add in Catalog</a>
+    <?php endif; ?>
   </p>
 <?php else: ?>
   <?php
@@ -63,23 +66,23 @@ $statusBadge = static function (string $status): string {
   ?>
   <div class="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
     <div>
-      <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">Course record</p>
-      <h1 class="mt-1 text-2xl font-semibold text-slate-900 dark:text-white">
+      <p class="<?= htmlspecialchars(ui_label()) ?>">Course record</p>
+      <h1 class="mt-1 <?= htmlspecialchars(ui_h1()) ?>">
         <span class="font-mono"><?= htmlspecialchars($cid) ?></span>
-        <span class="font-normal text-slate-600"> — <?= htmlspecialchars((string)($course['course_name'] ?? '')) ?></span>
+        <span class="font-normal text-slate-600 dark:text-slate-400"> — <?= htmlspecialchars((string)($course['course_name'] ?? '')) ?></span>
       </h1>
-      <p class="mt-2 text-sm text-slate-600">
+      <p class="mt-2 <?= htmlspecialchars(ui_muted()) ?>">
         <?= (int)($course['credits'] ?? 0) ?> credits ·
         <?= htmlspecialchars((string)($course['dept_name'] ?? $course['dept_id'] ?? '—')) ?>
         <?php if ((int)($course['is_active'] ?? 1) !== 1): ?>
-          · <span class="font-semibold text-amber-800">Inactive in catalog</span>
+          · <span class="font-semibold text-amber-800 dark:text-amber-200">Inactive in catalog</span>
         <?php endif; ?>
       </p>
     </div>
     <div class="flex flex-wrap gap-2">
-      <a class="rounded-xl border border-slate-200 bg-white px-4 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50" href="<?= htmlspecialchars(url('/admin.php?view=courses')) ?>">All offerings</a>
+      <a class="<?= htmlspecialchars(ui_btn_secondary()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=courses')) ?>">All offerings</a>
       <?php if ($can_edit_catalog): ?>
-        <a class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-indigo-500" href="<?= htmlspecialchars(url('/admin.php?view=catalog&edit=' . rawurlencode($cid))) ?>">Edit in catalog</a>
+        <a class="<?= htmlspecialchars(ui_btn_primary()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=catalog&edit=' . rawurlencode($cid))) ?>">Edit in catalog</a>
       <?php endif; ?>
     </div>
   </div>
@@ -87,33 +90,33 @@ $statusBadge = static function (string $status): string {
   <?php
       $courseDesc = trim((string)($course['description'] ?? ''));
   ?>
-  <div class="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-    <h2 class="text-sm font-semibold text-slate-900">Course information</h2>
-    <p class="mt-1 text-xs text-slate-500">Catalog summary — what this course covers and how it fits in the curriculum.</p>
+  <div class="mt-6 <?= htmlspecialchars(ui_card('p-5')) ?>">
+    <h2 class="<?= htmlspecialchars(ui_h2()) ?>">Course information</h2>
+    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Catalog summary — what this course covers and how it fits in the curriculum.</p>
     <?php if ($courseDesc !== ''): ?>
-      <div class="mt-4 rounded-xl border border-slate-100 bg-slate-50/80 p-4">
-        <p class="whitespace-pre-wrap text-sm leading-relaxed text-slate-800"><?= htmlspecialchars($courseDesc) ?></p>
+      <div class="mt-4 rounded-xl border border-slate-100 bg-slate-50/80 p-4 dark:border-slate-700 dark:bg-slate-800/50">
+        <p class="whitespace-pre-wrap text-sm leading-relaxed text-slate-800 dark:text-slate-200"><?= htmlspecialchars($courseDesc) ?></p>
       </div>
     <?php else: ?>
-      <div class="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-3 text-sm text-slate-600">
+      <div class="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-3 text-sm text-slate-600 dark:border-slate-600 dark:bg-slate-800/40 dark:text-slate-400">
         No catalog description on file yet.
         <?php if ($can_edit_catalog): ?>
-          Add narrative text under <a class="font-semibold text-indigo-700 hover:underline" href="<?= htmlspecialchars(url('/admin.php?view=catalog&edit=' . rawurlencode($cid))) ?>">Catalog → Edit <?= htmlspecialchars($cid) ?></a> so this page reads well for faculty and accreditation reviews.
+          Add narrative text under <a class="<?= htmlspecialchars(ui_link()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=catalog&edit=' . rawurlencode($cid))) ?>">Catalog → Edit <?= htmlspecialchars($cid) ?></a>.
         <?php else: ?>
-          Ask an administrator to add a description in <strong class="font-semibold text-slate-700">Catalog</strong>.
+          Ask an administrator to add a description in <strong class="font-semibold text-slate-700 dark:text-slate-200">Catalog</strong>.
         <?php endif; ?>
       </div>
     <?php endif; ?>
   </div>
 
-  <div class="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
-    <h2 class="text-sm font-semibold text-slate-900">Prerequisites</h2>
-    <p class="mt-1 text-xs text-slate-500">Required prior coursework (typically with a passing grade) before students may register.</p>
+  <div class="mt-6 <?= htmlspecialchars(ui_card('p-5')) ?>">
+    <h2 class="<?= htmlspecialchars(ui_h2()) ?>">Prerequisites</h2>
+    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Required prior coursework (typically with a passing grade) before students may register.</p>
     <?php if ($prereqs === []): ?>
-      <div class="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-3 text-sm text-slate-600">
+      <div class="mt-4 rounded-xl border border-dashed border-slate-200 bg-slate-50/60 px-4 py-3 text-sm text-slate-600 dark:border-slate-600 dark:bg-slate-800/40 dark:text-slate-400">
         <p>No prerequisites are linked to this course in the catalog.</p>
         <?php if ($can_edit_catalog): ?>
-          <p class="mt-2">To showcase prereqs here, open <a class="font-semibold text-indigo-700 hover:underline" href="<?= htmlspecialchars(url('/admin.php?view=catalog&edit=' . rawurlencode($cid))) ?>">Catalog → Edit <?= htmlspecialchars($cid) ?></a> and save prerequisite courses.</p>
+          <p class="mt-2">Open <a class="<?= htmlspecialchars(ui_link()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=catalog&edit=' . rawurlencode($cid))) ?>">Catalog → Edit <?= htmlspecialchars($cid) ?></a> to add them.</p>
         <?php endif; ?>
       </div>
     <?php else: ?>
@@ -158,16 +161,18 @@ $statusBadge = static function (string $status): string {
   </div>
 
   <?php if ($terms_with_offerings === []): ?>
-    <div class="mt-6 rounded-2xl border border-dashed border-slate-200 bg-slate-50/80 p-5">
-      <h2 class="text-sm font-semibold text-slate-900">Sections</h2>
-      <p class="mt-2 text-sm text-slate-600">This course has no scheduled sections yet.</p>
+    <div class="mt-6 <?= htmlspecialchars(ui_empty()) ?>">
+      <h2 class="<?= htmlspecialchars(ui_h2()) ?>">Sections</h2>
+      <p class="mt-2">This course has no scheduled sections yet.
+        <a class="<?= htmlspecialchars(ui_link()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=courses')) ?>">Add a section in Courses</a>.
+      </p>
     </div>
   <?php else: ?>
-    <div class="mt-6 rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+    <div class="mt-6 <?= htmlspecialchars(ui_card('p-5')) ?>">
       <div class="flex flex-col gap-3 sm:flex-row sm:items-end sm:justify-between">
         <div>
-          <h2 class="text-sm font-semibold text-slate-900">Sections &amp; roster</h2>
-          <p class="mt-1 text-xs text-slate-500">Pick a term to see offerings and enrolled students for this course.</p>
+          <h2 class="<?= htmlspecialchars(ui_h2()) ?>">Sections &amp; roster</h2>
+          <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Pick a term to see offerings and enrolled students for this course.</p>
         </div>
         <form method="get" class="flex flex-wrap items-end gap-2">
           <input type="hidden" name="view" value="course" />
@@ -176,8 +181,8 @@ $statusBadge = static function (string $status): string {
             <input type="hidden" name="highlight_section" value="<?= (int)$highlight_section ?>" />
           <?php endif; ?>
           <div>
-            <label class="block text-xs font-semibold uppercase tracking-wide text-slate-500" for="cd-term">Term</label>
-            <select id="cd-term" name="term_id" class="mt-1 rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm" onchange="this.form.submit()">
+            <label class="<?= htmlspecialchars(ui_label()) ?>" for="cd-term">Term</label>
+            <select id="cd-term" name="term_id" class="<?= htmlspecialchars(ui_select()) ?>" onchange="this.form.submit()">
               <?php foreach ($terms_with_offerings as $t): $tid = (int)($t['term_id'] ?? 0); ?>
                 <option value="<?= (int)$tid ?>" <?= $term_id !== null && $tid === $term_id ? 'selected' : '' ?>>
                   <?= htmlspecialchars((string)($t['code'] ?? '')) ?> — <?= htmlspecialchars((string)($t['name'] ?? '')) ?>
@@ -185,13 +190,13 @@ $statusBadge = static function (string $status): string {
               <?php endforeach; ?>
             </select>
           </div>
-          <noscript><button type="submit" class="rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">Apply</button></noscript>
+          <noscript><button type="submit" class="<?= htmlspecialchars(ui_btn_primary()) ?>">Apply</button></noscript>
         </form>
       </div>
 
-      <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200">
+      <div class="mt-5 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
         <table class="min-w-full text-left text-sm">
-          <thead class="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+          <thead class="<?= htmlspecialchars(ui_thead()) ?>">
             <tr>
               <th class="px-4 py-3">Section</th>
               <th class="px-4 py-3">Instructor</th>
@@ -230,9 +235,9 @@ $statusBadge = static function (string $status): string {
         <?php if ($roster === []): ?>
           <p class="mt-3 text-sm text-slate-600">No enrollments for this term.</p>
         <?php else: ?>
-          <div class="mt-4 overflow-x-auto rounded-xl border border-slate-200">
+          <div class="mt-4 overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-700">
             <table class="min-w-full text-left text-sm">
-              <thead class="bg-slate-50 text-xs font-semibold uppercase text-slate-500">
+              <thead class="<?= htmlspecialchars(ui_thead()) ?>">
                 <tr>
                   <th class="px-4 py-3">Student ID</th>
                   <th class="px-4 py-3">Name</th>

@@ -135,7 +135,7 @@ Root `public/`; pass PHP to FPM. Static files served directly.
 
 1. Public home loads (`/`)
 2. `login.php` — no “Cannot connect to MySQL”
-3. Staff login with email + password → `/admin`
+3. Staff login with email + password → `admin.php?view=dashboard` (full dashboard with sidebar).
 4. (Optional, when 2FA enabled) OTP email → `verify_otp.php`
 
 ---

@@ -24,7 +24,7 @@ try {
 auth_start_session();
 
 if ($dbOk && auth_is_portal_user() && !$isPost) {
-    header('Location: ' . url('/admin'));
+    header('Location: ' . url('/admin.php?view=dashboard'));
     exit;
 }
 
@@ -47,7 +47,7 @@ if ($isPost && $dbOk) {
                 $loginError = 'Enter a valid email address.';
             } elseif (($row = auth_verify_portal_credentials($email, $p)) !== null) {
                 auth_establish_portal_session($row);
-                header('Location: ' . url('/admin'));
+                header('Location: ' . url('/admin.php?view=dashboard'));
                 exit;
             } else {
                 $loginError = 'Invalid email or password.';

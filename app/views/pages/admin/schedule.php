@@ -162,19 +162,19 @@ $schedulePaginationPages = static function (int $current, int $last): array {
 };
 ?>
 
-<h1 class="text-2xl font-semibold text-slate-900 dark:text-white">Master schedule</h1>
-<p class="mt-2 text-sm text-slate-600">
-  A full directory of <strong class="font-semibold text-slate-800">students and faculty</strong>. Search by ID, name, email, or phone. Row IDs link to the person’s record.
+<h1 class="<?= htmlspecialchars(ui_h1()) ?>">Master schedule</h1>
+<p class="mt-2 <?= htmlspecialchars(ui_muted()) ?>">
+  A full directory of <strong class="font-semibold text-slate-800 dark:text-slate-200">students and faculty</strong>. Search by ID, name, email, or phone. Row IDs link to the person’s record.
 </p>
 
-<details class="group mt-5 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4 shadow-sm open:ring-1 open:ring-indigo-100 dark:border-indigo-900 dark:bg-indigo-950/30">
+<details class="group mt-5 rounded-2xl border border-indigo-100 bg-indigo-50/40 p-4 shadow-sm open:ring-1 open:ring-indigo-100 dark:border-indigo-900 dark:bg-indigo-950/30 dark:open:ring-indigo-900">
   <summary class="cursor-pointer list-none text-sm font-semibold text-indigo-950 dark:text-indigo-100 [&::-webkit-details-marker]:hidden">
     Quick links
   </summary>
   <div class="mt-4 flex flex-wrap gap-2">
-    <a class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" href="<?= htmlspecialchars(url('/admin/students/search')) ?>">ID lookup</a>
-    <a class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" href="<?= htmlspecialchars(url('/admin')) ?>">Dashboard</a>
-    <a class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-800 shadow-sm hover:bg-slate-50 dark:border-slate-600 dark:bg-slate-800 dark:text-slate-100 dark:hover:bg-slate-700" href="<?= htmlspecialchars(url('/admin/holds')) ?>">Holds</a>
+    <a class="<?= htmlspecialchars(ui_btn_secondary()) ?>" href="<?= htmlspecialchars(url('/admin/students/search')) ?>">ID lookup</a>
+    <a class="<?= htmlspecialchars(ui_btn_secondary()) ?>" href="<?= htmlspecialchars(url('/admin')) ?>">Dashboard</a>
+    <a class="<?= htmlspecialchars(ui_btn_secondary()) ?>" href="<?= htmlspecialchars(url('/admin/holds')) ?>">Holds</a>
   </div>
 </details>
 

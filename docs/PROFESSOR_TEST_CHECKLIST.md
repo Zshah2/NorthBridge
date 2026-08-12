@@ -15,9 +15,22 @@ Optional pre-flight:
 
 ```bash
 php scripts/smoke_check.php http://127.0.0.1:8000
+php scripts/capstone_verify.php http://127.0.0.1:8000
 ```
 
 Set `APP_DEBUG=0` (or unset) when demonstrating so errors stay user-safe. Use `APP_DEBUG=1` only while developing.
+
+---
+
+## Capstone demo script (recommended order)
+
+1. **Login** — `http://127.0.0.1:8000/login.php` → email + password → full dashboard.
+2. **Notifications** — hover or tap header bell → live MySQL row preview.
+3. **Courses → Add new section** — create a section (MWF, `10:00-11:15`, capacity 30) → success message.
+4. **Time conflict** — try same instructor + overlapping time → blocked with clear error.
+5. **Student lookup** — People / schedule search → `123123` → enrollments + holds.
+6. **Registration** — enroll/drop; show hold and schedule conflict rules.
+7. **Holds** — add/clear hold; confirm on student profile.
 
 ---
 
@@ -43,8 +56,8 @@ Set `APP_DEBUG=0` (or unset) when demonstrating so errors stay user-safe. Use `A
 
 1. Open `/login` — form loads.
 2. Wrong password — stays on login with “Invalid email or password” (no 500).
-3. Sign in as `admin` / `YourSecurePass123` — redirects to `/admin` (simple dashboard).
-4. Logout — returns to `/login`; `/admin` while logged out redirects to `/login`.
+3. Sign in as `admin` / `YourSecurePass123` — redirects to `admin.php` (full admin dashboard).
+4. Logout — returns to `/login`; `admin.php` while logged out redirects to `/login`.
 
 ### 3) Student lookup (database)
 
@@ -55,14 +68,21 @@ Set `APP_DEBUG=0` (or unset) when demonstrating so errors stay user-safe. Use `A
 
 1. `/admin/schedule` — term `FA26` selected by default; table lists ENG101 and HIS103 sections (or empty state if seed not run).
 
-### 5) Holds (database writes)
+### 5) Admin create section (capstone)
+
+1. `/admin.php?view=courses` — expand **Add new section for this term**.
+2. Pick term `FA26`, a catalog course, optional instructor, days `MWF`, time `10:00-11:15`, room, capacity.
+3. Submit — new row appears in sections table (highlighted).
+4. Submit again with same instructor + overlapping time — **Schedule conflict** error (no duplicate row).
+
+### 6) Holds (database writes)
 
 1. `/admin/holds` — open student `123123`.
 2. **Clear** the demo Bursar hold — row shows **Cleared** with timestamp.
 3. **Add** a new hold (e.g. Academic) — appears as **Active**.
 4. Confirm on `/admin/students/show?student_id=123123` that holds match.
 
-### 6) CSRF (security)
+### 7) CSRF (security)
 
 1. Submitting login or logout with a removed or wrong `csrf_token` should show a **403** message, not a silent failure.
 

@@ -52,6 +52,12 @@ foreach ($paths as $path) {
     if ($path === '/health') {
         $ok = $ok && $code === 200 && str_contains($body, '"ok"');
     }
+    if ($ok && preg_match('#(Deprecated:|Fatal error:|Parse error:|Warning:.* in /|Uncaught )#i', $body)) {
+        $ok = false;
+        fwrite(STDERR, "FAIL $path ($code) — PHP error leaked into HTML\n");
+        $failed = true;
+        continue;
+    }
 
     if ($ok) {
         fwrite(STDOUT, "OK  $path ($code)\n");

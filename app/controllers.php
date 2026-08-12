@@ -50,7 +50,7 @@ function handler_health(array $params): void
 function handler_admin_login_form(array $params): void
 {
     if (auth_is_portal_user()) {
-        redirect('/admin');
+        redirect('/admin.php?view=dashboard');
     }
     // Admin sign-in lives on the real file public/login.php (clean URL under PhpStorm, etc.).
     header('Location: ' . url('/login.php'), true, 302);
@@ -67,7 +67,7 @@ function handler_admin_login_submit(array $params): void
 
     $ok = $email !== '' && $password !== '' && auth_login_portal_user($email, $password);
     if ($ok) {
-        redirect('/admin');
+        redirect('/admin.php?view=dashboard');
     }
 
     render('pages/admin/login.php', [
@@ -82,7 +82,7 @@ function handler_admin_signup_form(array $params): void
 {
     global $app;
     if (auth_is_portal_user()) {
-        redirect('/admin');
+        redirect('/admin.php?view=dashboard');
     }
     render('pages/admin/signup.php', [
         'app' => $app,
@@ -98,7 +98,7 @@ function handler_admin_signup_submit(array $params): void
     csrf_require_valid();
 
     if (auth_is_portal_user()) {
-        redirect('/admin');
+        redirect('/admin.php?view=dashboard');
     }
 
     $email = trim((string)($_POST['email'] ?? ''));
@@ -140,211 +140,47 @@ function handler_admin_logout(array $params): void
 
 function handler_admin_dashboard(array $params): void
 {
-    global $app;
     auth_require_portal_user();
-    render(
-        'pages/admin/dashboard.php',
-        array_merge(['app' => $app], admin_portal_layout_context('dashboard', 'Dashboard — Northbridge Admin')),
-        'layouts/admin_portal.php'
-    );
+    redirect('/admin.php?view=dashboard');
 }
 
 function handler_admin_student_search(array $params): void
 {
-    global $app;
     auth_require_portal_user();
-    render(
-        'pages/admin/student_search.php',
-        array_merge(
-            ['app' => $app, 'student_id' => trim((string)($_GET['student_id'] ?? ''))],
-            admin_portal_layout_context('lookup', 'ID lookup — Northbridge Admin')
-        ),
-        'layouts/admin_portal.php'
-    );
+    redirect('/admin.php?view=people');
 }
 
 function handler_admin_student_show(array $params): void
 {
-    global $app;
     auth_require_portal_user();
-
     $studentIdRaw = trim((string)($_GET['student_id'] ?? ''));
-    $studentId = ctype_digit($studentIdRaw) ? (int)$studentIdRaw : null;
-
-    $student = null;
-    $departments = [];
-    $enrollments = [];
-    $holds = [];
-
-    if ($studentId !== null) {
-        $pdo = db();
-
-        $stmt = $pdo->prepare('
-          SELECT u.*
-          FROM users u
-          WHERE u.user_id = ?
-          LIMIT 1
-        ');
-        $stmt->execute([$studentId]);
-        $student = $stmt->fetch();
-
-        $stmt = $pdo->prepare('
-          SELECT sd.dept_id, d.dept_name, sd.date_of_declaration
-          FROM student_departments sd
-          JOIN departments d ON d.dept_id = sd.dept_id
-          WHERE sd.student_id = ?
-          ORDER BY d.dept_name
-        ');
-        $stmt->execute([$studentId]);
-        $departments = $stmt->fetchAll();
-
-        $stmt = $pdo->prepare('
-          SELECT
-            e.status,
-            e.created_at,
-            s.section_id,
-            c.course_id,
-            c.course_name,
-            c.credits,
-            t.code AS term_code,
-            t.name AS term_name,
-            s.meeting_days,
-            s.meeting_time,
-            s.room
-          FROM enrollments e
-          JOIN sections s ON s.section_id = e.section_id
-          JOIN courses c ON c.course_id = s.course_id
-          JOIN terms t ON t.term_id = s.term_id
-          WHERE e.student_id = ?
-          ORDER BY e.created_at DESC
-        ');
-        $stmt->execute([$studentId]);
-        $enrollments = $stmt->fetchAll();
-
-        try {
-            $stmt = $pdo->prepare('
-              SELECT hold_id, hold_type, note, is_active, created_at, cleared_at
-              FROM student_holds
-              WHERE student_id = ?
-              ORDER BY created_at DESC
-            ');
-            $stmt->execute([$studentId]);
-            $holds = $stmt->fetchAll();
-        } catch (Throwable) {
-            $holds = [];
-        }
+    if ($studentIdRaw !== '' && ctype_digit($studentIdRaw)) {
+        redirect('/admin.php?view=people&id=' . rawurlencode($studentIdRaw));
     }
-
-    render(
-        'pages/admin/student_detail.php',
-        array_merge(
-            [
-                'app' => $app,
-                'student_id' => $studentIdRaw,
-                'student' => $student,
-                'departments' => $departments,
-                'enrollments' => $enrollments,
-                'holds' => $holds,
-                'can_manage_holds' => auth_can_manage_holds(),
-            ],
-            admin_portal_layout_context('lookup', 'Student detail — Northbridge Admin')
-        ),
-        'layouts/admin_portal.php'
-    );
+    redirect('/admin.php?view=people');
 }
 
 function handler_admin_schedule(array $params): void
 {
-    global $app;
     auth_require_portal_user();
-
-    require_once __DIR__ . '/lib/admin_schedule.php';
-
-    $state = admin_schedule_state(db(), $_GET);
-
-    render(
-        'pages/admin/schedule.php',
-        array_merge(
-            ['app' => $app],
-            $state,
-            admin_portal_layout_context('schedule', 'Master schedule — Northbridge Admin'),
-            ['schedule_form_action' => url('/admin/schedule')]
-        ),
-        'layouts/admin_portal.php'
-    );
+    $qs = (string)($_SERVER['QUERY_STRING'] ?? '');
+    redirect('/admin.php?view=schedule' . ($qs !== '' ? '&' . $qs : ''));
 }
 
 function handler_admin_holds_index(array $params): void
 {
-    global $app;
     auth_require_portal_user();
-    render(
-        'pages/admin/holds_search.php',
-        array_merge(
-            [
-                'app' => $app,
-                'student_id' => trim((string)($_GET['student_id'] ?? '')),
-                'can_manage_holds' => auth_can_manage_holds(),
-            ],
-            admin_portal_layout_context('holds', 'Holds — Northbridge Admin')
-        ),
-        'layouts/admin_portal.php'
-    );
+    redirect('/admin.php?view=holds');
 }
 
 function handler_admin_holds_show(array $params): void
 {
-    global $app;
     auth_require_portal_user();
-
     $studentIdRaw = trim((string)($_GET['student_id'] ?? ''));
-    $studentId = ctype_digit($studentIdRaw) ? (int)$studentIdRaw : null;
-
-    $student = null;
-    $holds = [];
-    $error = null;
-
-    if ($studentId === null) {
-        $error = 'Enter a numeric student ID.';
-    } else {
-        $pdo = db();
-        $stmt = $pdo->prepare('SELECT u.* FROM users u JOIN students s ON s.student_id = u.user_id WHERE u.user_id = ? LIMIT 1');
-        $stmt->execute([$studentId]);
-        $student = $stmt->fetch();
-        if (!$student) {
-            $error = 'No student record for that ID.';
-        } else {
-            try {
-                $stmt = $pdo->prepare('
-                  SELECT hold_id, hold_type, note, is_active, created_at, cleared_at
-                  FROM student_holds
-                  WHERE student_id = ?
-                  ORDER BY is_active DESC, created_at DESC
-                ');
-                $stmt->execute([$studentId]);
-                $holds = $stmt->fetchAll();
-            } catch (Throwable) {
-                $error = 'Holds table missing — run php scripts/migrate.php (includes 002_holds_audit.sql).';
-            }
-        }
+    if ($studentIdRaw !== '' && ctype_digit($studentIdRaw)) {
+        redirect('/admin.php?view=people&id=' . rawurlencode($studentIdRaw) . '&people_panel=hold');
     }
-
-    render(
-        'pages/admin/holds_show.php',
-        array_merge(
-            [
-                'app' => $app,
-                'student_id' => $studentIdRaw,
-                'student' => $student,
-                'holds' => $holds,
-                'error' => $error,
-                'hold_types' => ['Bursar', 'Academic', 'Registration', 'Other'],
-                'can_manage_holds' => auth_can_manage_holds(),
-            ],
-            admin_portal_layout_context('holds', 'Holds — Northbridge Admin')
-        ),
-        'layouts/admin_portal.php'
-    );
+    redirect('/admin.php?view=holds');
 }
 
 function handler_admin_holds_add(array $params): void
@@ -358,14 +194,14 @@ function handler_admin_holds_add(array $params): void
     $allowed = ['Bursar', 'Academic', 'Registration', 'Other'];
 
     if ($studentId === null || !in_array($holdType, $allowed, true)) {
-        redirect('/admin/holds?error=invalid');
+        redirect('/admin.php?view=holds&error=invalid');
     }
 
     $pdo = db();
     $chk = $pdo->prepare('SELECT 1 FROM students WHERE student_id = ?');
     $chk->execute([$studentId]);
     if (!$chk->fetchColumn()) {
-        redirect('/admin/holds?error=nostudent');
+        redirect('/admin.php?view=holds&error=nostudent');
     }
 
     $stmt = $pdo->prepare('
@@ -380,7 +216,7 @@ function handler_admin_holds_add(array $params): void
 
     audit_admin($pdo, 'hold_add', 'student_id=' . $studentId . ';type=' . $holdType);
 
-    redirect('/admin/holds/show?student_id=' . $studentId);
+    redirect('/admin.php?view=people&id=' . $studentId . '&people_panel=hold');
 }
 
 function handler_admin_holds_clear(array $params): void
@@ -392,7 +228,7 @@ function handler_admin_holds_clear(array $params): void
     $studentId = isset($_POST['student_id']) && ctype_digit((string)$_POST['student_id']) ? (int)$_POST['student_id'] : null;
 
     if ($holdId === null || $studentId === null) {
-        redirect('/admin/holds');
+        redirect('/admin.php?view=holds');
     }
 
     $pdo = db();
@@ -405,5 +241,5 @@ function handler_admin_holds_clear(array $params): void
 
     audit_admin($pdo, 'hold_clear', 'student_id=' . $studentId . ';hold_id=' . $holdId);
 
-    redirect('/admin/holds/show?student_id=' . $studentId);
+    redirect('/admin.php?view=people&id=' . $studentId . '&people_panel=hold');
 }

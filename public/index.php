@@ -7,6 +7,7 @@ require __DIR__ . '/../app/lib/url.php';
 require __DIR__ . '/../app/lib/db.php';
 require __DIR__ . '/../app/lib/auth.php';
 require __DIR__ . '/../app/lib/csrf.php';
+require __DIR__ . '/../app/lib/ui.php';
 require __DIR__ . '/../app/lib/bootstrap.php';
 
 bootstrap_app();

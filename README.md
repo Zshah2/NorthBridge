@@ -57,7 +57,7 @@ Staff sign-in is **email + password** (no 2FA for now). Optional email OTP can b
 
 - **Marketing / home:** `/` (via `public/index.php` + router)
 - **Admin sign-in:** `public/login.php` (direct file — works with PhpStorm built-in server)
-- **Admin dashboard:** `/admin` — ID lookup, schedule, holds
+- **Admin dashboard:** `public/admin.php` — full sidebar (People, schedule, registration, catalog, holds, accounts, …)
 
 ### Built-in server
 

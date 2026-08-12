@@ -19,7 +19,8 @@ function bootstrap_app(): void
         error_reporting(E_ALL);
     } else {
         ini_set('display_errors', '0');
-        error_reporting(E_ALL & ~E_DEPRECATED & ~E_STRICT);
+        // E_STRICT removed in PHP 8.4+; mask deprecations in production demo mode.
+        error_reporting(E_ALL & ~E_DEPRECATED);
     }
 
     set_exception_handler(static function (Throwable $e): void {

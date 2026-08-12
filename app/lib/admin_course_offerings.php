@@ -17,7 +17,9 @@ declare(strict_types=1);
  *   course_sections_total: int,
  *   page: int,
  *   per_page: int,
- *   total_pages: int
+ *   total_pages: int,
+ *   catalog_courses: list<array<string, mixed>>,
+ *   faculty_rows: list<array<string, mixed>>
  * }
  */
 function admin_course_offerings_state(PDO $pdo, array $get): array
@@ -153,6 +155,29 @@ function admin_course_offerings_state(PDO $pdo, array $get): array
         $totalPages = 1;
     }
 
+    $catalogCourses = [];
+    try {
+        $catalogCourses = $pdo->query('
+          SELECT course_id, course_name, credits
+          FROM courses
+          ORDER BY course_id
+        ')->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (Throwable) {
+        $catalogCourses = [];
+    }
+
+    $facultyRows = [];
+    try {
+        $facultyRows = $pdo->query('
+          SELECT f.faculty_id, u.first_name, u.last_name
+          FROM faculty f
+          INNER JOIN users u ON u.user_id = f.faculty_id
+          ORDER BY u.last_name, u.first_name, f.faculty_id
+        ')->fetchAll(PDO::FETCH_ASSOC) ?: [];
+    } catch (Throwable) {
+        $facultyRows = [];
+    }
+
     return [
         'terms' => $terms,
         'term_id' => $termId,
@@ -164,5 +189,7 @@ function admin_course_offerings_state(PDO $pdo, array $get): array
         'page' => $page,
         'per_page' => $perPage,
         'total_pages' => max(1, $totalPages),
+        'catalog_courses' => $catalogCourses,
+        'faculty_rows' => $facultyRows,
     ];
 }
