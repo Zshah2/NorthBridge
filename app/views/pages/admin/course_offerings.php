@@ -65,6 +65,30 @@ $faculty_rows = $faculty_rows ?? [];
 $highlight_section = isset($_GET['highlight_section']) && ctype_digit((string)$_GET['highlight_section'])
     ? (int)$_GET['highlight_section']
     : null;
+$edit_section_id = isset($_GET['edit_section']) && ctype_digit((string)$_GET['edit_section'])
+    ? (int)$_GET['edit_section']
+    : null;
+
+$coursesPageUrl = static function (?int $editSection = null) use ($term_id, $dept_id, $q, $per_page, $page): string {
+    $qparams = ['view' => 'courses', 'page' => $page];
+    if ($term_id !== null) {
+        $qparams['term_id'] = (string)$term_id;
+    }
+    if ($dept_id !== '') {
+        $qparams['dept_id'] = $dept_id;
+    }
+    if ($q !== '') {
+        $qparams['q'] = $q;
+    }
+    if ($per_page !== 50) {
+        $qparams['per_page'] = (string)$per_page;
+    }
+    if ($editSection !== null && $editSection > 0) {
+        $qparams['edit_section'] = (string)$editSection;
+    }
+
+    return url('/admin.php?' . http_build_query($qparams));
+};
 
 $courseDetailHref = static function (string $courseId, ?int $sectionId = null) use ($term_id): string {
     $q = ['view' => 'course', 'course_id' => trim($courseId)];
@@ -237,14 +261,17 @@ $courseDetailHref = static function (string $courseId, ?int $sectionId = null) u
           <th class="px-4 py-3">Room</th>
           <th class="px-4 py-3 text-right">Enrolled</th>
           <th class="px-4 py-3 text-right">Cap</th>
+          <?php if (!empty($isAdmin)): ?>
+            <th class="px-4 py-3 text-right">Actions</th>
+          <?php endif; ?>
         </tr>
       </thead>
       <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
         <?php if ($terms === []): ?>
-          <tr><td class="px-4 py-6 <?= htmlspecialchars(ui_muted()) ?>" colspan="8">No terms configured yet.</td></tr>
+          <tr><td class="px-4 py-6 <?= htmlspecialchars(ui_muted()) ?>" colspan="<?= !empty($isAdmin) ? 9 : 8 ?>">No terms configured yet.</td></tr>
         <?php elseif ($course_sections === []): ?>
           <tr>
-            <td class="px-4 py-6 <?= htmlspecialchars(ui_muted()) ?>" colspan="8">
+            <td class="px-4 py-6 <?= htmlspecialchars(ui_muted()) ?>" colspan="<?= !empty($isAdmin) ? 9 : 8 ?>">
               No sections match these filters.
               <?php if (!empty($isAdmin)): ?>
                 <a class="<?= htmlspecialchars(ui_link()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=catalog')) ?>">Add a catalog course</a>
@@ -254,8 +281,16 @@ $courseDetailHref = static function (string $courseId, ?int $sectionId = null) u
           </tr>
         <?php else: ?>
           <?php foreach ($course_sections as $r): ?>
-            <?php $cidRow = (string)($r['course_id'] ?? ''); $secRow = (int)($r['section_id'] ?? 0); ?>
-            <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/50<?= $highlight_section !== null && $secRow === $highlight_section ? ' bg-emerald-50/80 ring-1 ring-inset ring-emerald-300 dark:bg-emerald-950/40 dark:ring-emerald-700' : '' ?>">
+            <?php
+            $cidRow = (string)($r['course_id'] ?? '');
+            $secRow = (int)($r['section_id'] ?? 0);
+            $isEditing = !empty($isAdmin) && $edit_section_id !== null && $secRow === $edit_section_id;
+            $facIdRow = isset($r['faculty_id']) && $r['faculty_id'] !== null && $r['faculty_id'] !== ''
+                ? (int)$r['faculty_id']
+                : null;
+            $termIdRow = (int)($r['term_id'] ?? 0);
+            ?>
+            <tr class="hover:bg-slate-50/60 dark:hover:bg-slate-800/50<?= ($highlight_section !== null && $secRow === $highlight_section) || $isEditing ? ' bg-emerald-50/80 ring-1 ring-inset ring-emerald-300 dark:bg-emerald-950/40 dark:ring-emerald-700' : '' ?>">
               <td class="px-4 py-3 font-mono text-xs font-semibold">
                 <a class="text-indigo-700 hover:text-indigo-900 hover:underline dark:text-indigo-300" href="<?= htmlspecialchars($courseDetailHref($cidRow, $secRow > 0 ? $secRow : null)) ?>"><?= $secRow ?></a>
               </td>
@@ -276,7 +311,63 @@ $courseDetailHref = static function (string $courseId, ?int $sectionId = null) u
               <td class="px-4 py-3"><?= htmlspecialchars(trim((string)($r['room'] ?? '')) !== '' ? (string)$r['room'] : '—') ?></td>
               <td class="px-4 py-3 text-right tabular-nums"><?= (int)($r['enrolled_count'] ?? 0) ?></td>
               <td class="px-4 py-3 text-right tabular-nums"><?= htmlspecialchars((string)($r['capacity'] ?? '—')) ?></td>
+              <?php if (!empty($isAdmin)): ?>
+                <td class="px-4 py-3 text-right">
+                  <?php if ($isEditing): ?>
+                    <a class="text-xs font-semibold text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white" href="<?= htmlspecialchars($coursesPageUrl(null)) ?>">Cancel</a>
+                  <?php else: ?>
+                    <a class="text-xs font-semibold text-indigo-700 hover:text-indigo-900 hover:underline dark:text-indigo-300" href="<?= htmlspecialchars($coursesPageUrl($secRow)) ?>">Edit</a>
+                  <?php endif; ?>
+                </td>
+              <?php endif; ?>
             </tr>
+            <?php if ($isEditing): ?>
+              <tr class="bg-indigo-50/50 dark:bg-indigo-950/20">
+                <td colspan="<?= !empty($isAdmin) ? 9 : 8 ?>" class="px-4 py-4">
+                  <form method="post" action="<?= htmlspecialchars(url('/admin.php?view=courses' . ($term_id !== null ? '&term_id=' . $term_id : ''))) ?>">
+                    <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf ?? csrf_token()) ?>" />
+                    <input type="hidden" name="action" value="section_update" />
+                    <input type="hidden" name="section_id" value="<?= (int)$secRow ?>" />
+                    <input type="hidden" name="term_id" value="<?= (int)$termIdRow ?>" />
+                    <div class="mb-3 text-sm font-semibold text-indigo-950 dark:text-indigo-100">
+                      Edit section #<?= (int)$secRow ?> · <?= htmlspecialchars($cidRow) ?>
+                    </div>
+                    <div class="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+                      <div>
+                        <label class="<?= htmlspecialchars(ui_label()) ?>" for="es-faculty-<?= (int)$secRow ?>">Instructor</label>
+                        <select id="es-faculty-<?= (int)$secRow ?>" name="faculty_id" class="<?= htmlspecialchars(ui_select()) ?>">
+                          <option value="" <?= $facIdRow === null ? 'selected' : '' ?>>Unassigned</option>
+                          <?php foreach ($faculty_rows as $f): $fid = (int)($f['faculty_id'] ?? 0); ?>
+                            <option value="<?= (int)$fid ?>" <?= $facIdRow !== null && $fid === $facIdRow ? 'selected' : '' ?>><?= htmlspecialchars(trim((string)($f['last_name'] ?? '') . ', ' . (string)($f['first_name'] ?? ''))) ?> (<?= (int)$fid ?>)</option>
+                          <?php endforeach; ?>
+                        </select>
+                      </div>
+                      <div>
+                        <label class="<?= htmlspecialchars(ui_label()) ?>" for="es-days-<?= (int)$secRow ?>">Meeting days</label>
+                        <input id="es-days-<?= (int)$secRow ?>" name="meeting_days" value="<?= htmlspecialchars(trim((string)($r['meeting_days'] ?? ''))) ?>" class="<?= htmlspecialchars(ui_input()) ?>" placeholder="MWF or TR" />
+                      </div>
+                      <div>
+                        <label class="<?= htmlspecialchars(ui_label()) ?>" for="es-time-<?= (int)$secRow ?>">Meeting time</label>
+                        <input id="es-time-<?= (int)$secRow ?>" name="meeting_time" value="<?= htmlspecialchars(trim((string)($r['meeting_time'] ?? ''))) ?>" class="<?= htmlspecialchars(ui_input()) ?>" placeholder="10:00-11:15" pattern="\d{1,2}:\d{2}-\d{1,2}:\d{2}" title="Use format like 10:00-11:15" />
+                      </div>
+                      <div>
+                        <label class="<?= htmlspecialchars(ui_label()) ?>" for="es-room-<?= (int)$secRow ?>">Room</label>
+                        <input id="es-room-<?= (int)$secRow ?>" name="room" value="<?= htmlspecialchars(trim((string)($r['room'] ?? ''))) ?>" class="<?= htmlspecialchars(ui_input()) ?>" placeholder="204" />
+                      </div>
+                      <div>
+                        <label class="<?= htmlspecialchars(ui_label()) ?>" for="es-cap-<?= (int)$secRow ?>">Capacity</label>
+                        <input id="es-cap-<?= (int)$secRow ?>" name="capacity" type="number" min="1" max="999" value="<?= (int)($r['capacity'] ?? 30) ?>" required class="<?= htmlspecialchars(ui_input()) ?>" />
+                      </div>
+                    </div>
+                    <div class="mt-4 flex flex-wrap items-center gap-3">
+                      <button type="submit" class="<?= htmlspecialchars(ui_btn_primary()) ?>">Save section</button>
+                      <a class="text-sm font-semibold text-slate-600 hover:text-slate-900 dark:text-slate-300 dark:hover:text-white" href="<?= htmlspecialchars($coursesPageUrl(null)) ?>">Cancel</a>
+                      <p class="text-xs text-slate-500 dark:text-slate-400">Assign instructor later or update schedule. Conflicts checked against same instructor or room in this term.</p>
+                    </div>
+                  </form>
+                </td>
+              </tr>
+            <?php endif; ?>
           <?php endforeach; ?>
         <?php endif; ?>
       </tbody>

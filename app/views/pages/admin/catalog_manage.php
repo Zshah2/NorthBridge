@@ -10,6 +10,23 @@ $departments = $departments ?? [];
 $editCourse = $editCourse ?? null;
 $editPrereqs = $editPrereqs ?? [];
 $allCourseIds = $allCourseIds ?? [];
+$courseNameById = [];
+foreach ($catalogCourses as $c) {
+    $cid = (string)($c['course_id'] ?? '');
+    if ($cid !== '') {
+        $courseNameById[$cid] = (string)($c['course_name'] ?? '');
+    }
+}
+$prereqPickerCourses = [];
+foreach ($allCourseIds as $pcid) {
+    if ($editCourse && $pcid === (string)$editCourse['course_id']) {
+        continue;
+    }
+    $prereqPickerCourses[] = [
+        'course_id' => $pcid,
+        'course_name' => $courseNameById[$pcid] ?? '',
+    ];
+}
 ?>
 <h1 class="<?= htmlspecialchars(ui_h1()) ?>">Course catalog</h1>
 <p class="mt-2 <?= htmlspecialchars(ui_muted()) ?>">
@@ -65,26 +82,124 @@ $allCourseIds = $allCourseIds ?? [];
 <?php if ($editCourse): ?>
   <div class="mt-6 <?= htmlspecialchars(ui_card('p-5')) ?>">
     <h2 class="<?= htmlspecialchars(ui_h2()) ?>">Prerequisites for <?= htmlspecialchars((string)$editCourse['course_id']) ?></h2>
-    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">Select courses that must be completed (with a passing grade) before enrolling in this course.</p>
-    <form class="mt-4" method="post" action="<?= htmlspecialchars(url('/admin.php?view=catalog&edit=' . rawurlencode((string)$editCourse['course_id']))) ?>">
+    <p class="mt-1 text-xs text-slate-500 dark:text-slate-400">All selected courses must be completed before registration.</p>
+    <form id="prereq-form" class="mt-4" method="post" action="<?= htmlspecialchars(url('/admin.php?view=catalog&edit=' . rawurlencode((string)$editCourse['course_id']))) ?>">
       <input type="hidden" name="csrf_token" value="<?= htmlspecialchars($csrf) ?>" />
       <input type="hidden" name="action" value="catalog_prereqs_save" />
       <input type="hidden" name="course_id" value="<?= htmlspecialchars((string)$editCourse['course_id']) ?>" />
-      <div class="max-h-64 overflow-y-auto rounded-xl border border-slate-200 p-3 dark:border-slate-600">
-        <div class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
-          <?php foreach ($allCourseIds as $pcid): ?>
-            <?php if ($pcid === (string)$editCourse['course_id']) {
-                continue;
-            } ?>
-            <label class="inline-flex items-center gap-2 text-sm dark:text-slate-200">
-              <input type="checkbox" name="prereq_ids[]" value="<?= htmlspecialchars($pcid) ?>" <?= in_array($pcid, $editPrereqs, true) ? 'checked' : '' ?> />
-              <span class="font-mono text-xs"><?= htmlspecialchars($pcid) ?></span>
+      <div>
+        <div class="<?= htmlspecialchars(ui_label()) ?>">Selected prerequisites</div>
+        <div id="prereq-chips" class="mt-2 flex min-h-[2.5rem] flex-wrap gap-2 rounded-xl border border-slate-200 bg-slate-50/80 p-2 dark:border-slate-600 dark:bg-slate-800/50">
+          <?php if ($editPrereqs === []): ?>
+            <span id="prereq-chips-empty" class="self-center px-1 text-xs text-slate-500 dark:text-slate-400">No prerequisites selected — add courses below.</span>
+          <?php endif; ?>
+        </div>
+      </div>
+      <div class="mt-4">
+        <label class="<?= htmlspecialchars(ui_label()) ?>" for="prereq-search">Search catalog courses</label>
+        <input id="prereq-search" type="search" autocomplete="off" class="<?= htmlspecialchars(ui_input()) ?>" placeholder="Filter by course ID or name…" />
+      </div>
+      <div class="mt-3 max-h-64 overflow-y-auto rounded-xl border border-slate-200 p-3 dark:border-slate-600">
+        <div id="prereq-picker" class="grid gap-2 sm:grid-cols-2 lg:grid-cols-3">
+          <?php foreach ($prereqPickerCourses as $pc): ?>
+            <?php
+            $pcid = (string)($pc['course_id'] ?? '');
+            $pname = (string)($pc['course_name'] ?? '');
+            $checked = in_array($pcid, $editPrereqs, true);
+            ?>
+            <label class="prereq-option inline-flex items-start gap-2 rounded-lg px-1 py-1 text-sm hover:bg-slate-50 dark:hover:bg-slate-800/60 dark:text-slate-200" data-course-id="<?= htmlspecialchars(strtolower($pcid)) ?>" data-course-label="<?= htmlspecialchars(strtolower($pcid . ' ' . $pname)) ?>">
+              <input type="checkbox" class="prereq-checkbox mt-0.5" name="prereq_ids[]" value="<?= htmlspecialchars($pcid) ?>" data-course-id="<?= htmlspecialchars($pcid) ?>" data-course-name="<?= htmlspecialchars($pname) ?>" <?= $checked ? 'checked' : '' ?> />
+              <span>
+                <span class="font-mono text-xs font-semibold"><?= htmlspecialchars($pcid) ?></span>
+                <?php if ($pname !== ''): ?>
+                  <span class="block text-xs text-slate-500 dark:text-slate-400"><?= htmlspecialchars($pname) ?></span>
+                <?php endif; ?>
+              </span>
             </label>
           <?php endforeach; ?>
         </div>
+        <p id="prereq-picker-empty" class="hidden py-4 text-center text-xs text-slate-500 dark:text-slate-400">No courses match your search.</p>
       </div>
       <button type="submit" class="mt-4 <?= htmlspecialchars(ui_btn_primary()) ?>">Save prerequisites</button>
     </form>
+    <script>
+    (function () {
+      const form = document.getElementById('prereq-form');
+      if (!form) return;
+      const chips = document.getElementById('prereq-chips');
+      const emptyHint = document.getElementById('prereq-chips-empty');
+      const search = document.getElementById('prereq-search');
+      const pickerEmpty = document.getElementById('prereq-picker-empty');
+      const options = Array.from(form.querySelectorAll('.prereq-option'));
+      const checkboxes = Array.from(form.querySelectorAll('.prereq-checkbox'));
+
+      function syncEmptyHint() {
+        const hasChip = chips.querySelector('[data-chip-id]');
+        if (emptyHint) emptyHint.classList.toggle('hidden', !!hasChip);
+      }
+
+      function addChip(id, name) {
+        if (chips.querySelector('[data-chip-id="' + id + '"]')) return;
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.dataset.chipId = id;
+        btn.className = 'inline-flex items-center gap-1 rounded-full border border-indigo-200 bg-indigo-50 px-2.5 py-1 text-xs font-semibold text-indigo-900 hover:bg-indigo-100 dark:border-indigo-800 dark:bg-indigo-950/60 dark:text-indigo-100 dark:hover:bg-indigo-900/60';
+        btn.setAttribute('aria-label', 'Remove prerequisite ' + id);
+        const idSpan = document.createElement('span');
+        idSpan.className = 'font-mono';
+        idSpan.textContent = id;
+        btn.appendChild(idSpan);
+        if (name) {
+          const nameSpan = document.createElement('span');
+          nameSpan.className = 'max-w-[10rem] truncate font-normal text-indigo-800/80 dark:text-indigo-200/80';
+          nameSpan.textContent = name;
+          btn.appendChild(nameSpan);
+        }
+        const xSpan = document.createElement('span');
+        xSpan.className = 'ml-0.5 text-indigo-500';
+        xSpan.setAttribute('aria-hidden', 'true');
+        xSpan.textContent = '×';
+        btn.appendChild(xSpan);
+        btn.addEventListener('click', function () {
+          const cb = form.querySelector('.prereq-checkbox[data-course-id="' + id + '"]');
+          if (cb) cb.checked = false;
+          btn.remove();
+          syncEmptyHint();
+        });
+        chips.appendChild(btn);
+        syncEmptyHint();
+      }
+
+      function syncChipsFromCheckboxes() {
+        chips.querySelectorAll('[data-chip-id]').forEach(function (el) { el.remove(); });
+        checkboxes.forEach(function (cb) {
+          if (cb.checked) addChip(cb.dataset.courseId || cb.value, cb.dataset.courseName || '');
+        });
+        syncEmptyHint();
+      }
+
+      checkboxes.forEach(function (cb) {
+        cb.addEventListener('change', syncChipsFromCheckboxes);
+      });
+
+      function applySearch() {
+        const q = (search.value || '').trim().toLowerCase();
+        let visible = 0;
+        options.forEach(function (opt) {
+          const label = opt.dataset.courseLabel || '';
+          const show = q === '' || label.indexOf(q) !== -1;
+          opt.classList.toggle('hidden', !show);
+          if (show) visible++;
+        });
+        if (pickerEmpty) pickerEmpty.classList.toggle('hidden', visible > 0);
+      }
+
+      if (search) search.addEventListener('input', applySearch);
+
+      syncChipsFromCheckboxes();
+      applySearch();
+    })();
+    </script>
   </div>
 <?php endif; ?>
 
@@ -96,6 +211,7 @@ $allCourseIds = $allCourseIds ?? [];
         <th class="px-4 py-3">Name</th>
         <th class="px-4 py-3">Cr</th>
         <th class="px-4 py-3">Dept</th>
+        <th class="px-4 py-3">Prereqs</th>
         <th class="px-4 py-3">Active</th>
         <th class="px-4 py-3"></th>
       </tr>
@@ -103,7 +219,7 @@ $allCourseIds = $allCourseIds ?? [];
     <tbody class="divide-y divide-slate-200 dark:divide-slate-700">
       <?php if ($catalogCourses === []): ?>
         <tr>
-          <td class="px-4 py-8 text-center <?= htmlspecialchars(ui_muted()) ?>" colspan="6">
+          <td class="px-4 py-8 text-center <?= htmlspecialchars(ui_muted()) ?>" colspan="7">
             No catalog courses yet. Use Add course above, then schedule sections under
             <a class="<?= htmlspecialchars(ui_link()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=courses')) ?>">Courses</a>.
           </td>
@@ -119,6 +235,10 @@ $allCourseIds = $allCourseIds ?? [];
             </td>
             <td class="px-4 py-3"><?= (int)$c['credits'] ?></td>
             <td class="px-4 py-3 text-slate-600 dark:text-slate-400"><?= htmlspecialchars((string)($c['dept_name'] ?? '—')) ?></td>
+            <td class="px-4 py-3 tabular-nums text-slate-600 dark:text-slate-400">
+              <?php $pc = (int)($c['prereq_count'] ?? 0); ?>
+              <?= $pc === 0 ? '—' : ($pc === 1 ? '1 prereq' : $pc . ' prereqs') ?>
+            </td>
             <td class="px-4 py-3"><?= (int)($c['is_active'] ?? 1) === 1 ? 'Yes' : 'No' ?></td>
             <td class="px-4 py-3 text-right">
               <a class="<?= htmlspecialchars(ui_link()) ?>" href="<?= htmlspecialchars(url('/admin.php?view=catalog&edit=' . rawurlencode((string)$c['course_id']))) ?>">Edit</a>

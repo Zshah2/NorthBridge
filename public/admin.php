@@ -179,7 +179,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         exit;
     }
     if ($isLimited) {
-        $blocked = ['grade_upsert', 'people_scr_upsert', 'catalog_course_save', 'catalog_prereqs_save', 'section_save', 'term_registration_save', 'auth_password_reset', 'auth_login_save', 'auth_email_save', 'auth_user_active', 'reg_promote'];
+        $blocked = ['grade_upsert', 'people_scr_upsert', 'catalog_course_save', 'catalog_prereqs_save', 'section_save', 'section_update', 'term_registration_save', 'auth_password_reset', 'auth_login_save', 'auth_email_save', 'auth_user_active', 'reg_promote'];
         $act = (string)($_POST['action'] ?? '');
         if (in_array($act, $blocked, true)) {
             header('Location: ' . url('/admin.php?view=' . rawurlencode($view) . '&msg=forbidden'));
@@ -901,6 +901,87 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         $newSectionId = (int)$pdo->lastInsertId();
         admin_audit($pdo, 'section_save', $courseId . ' section #' . $newSectionId . ' term ' . $termId);
         header('Location: ' . $redirectBase . '&msg=section_saved&highlight_section=' . $newSectionId);
+        exit;
+    }
+
+    if ($action === 'section_update' && $isAdmin) {
+        $sectionId = isset($_POST['section_id']) && ctype_digit((string)$_POST['section_id']) ? (int)$_POST['section_id'] : null;
+        $termId = isset($_POST['term_id']) && ctype_digit((string)$_POST['term_id']) ? (int)$_POST['term_id'] : null;
+        $facultyRaw = trim((string)($_POST['faculty_id'] ?? ''));
+        $facultyId = ($facultyRaw !== '' && ctype_digit($facultyRaw)) ? (int)$facultyRaw : null;
+        $meetingDays = strtoupper(trim((string)($_POST['meeting_days'] ?? '')));
+        $meetingTime = trim((string)($_POST['meeting_time'] ?? ''));
+        $room = trim((string)($_POST['room'] ?? ''));
+        $capacity = isset($_POST['capacity']) && is_numeric((string)$_POST['capacity']) ? (int)$_POST['capacity'] : null;
+
+        $redirectBase = url('/admin.php?view=courses' . ($termId !== null ? '&term_id=' . $termId : ''));
+        $redirectEdit = $redirectBase . ($sectionId !== null ? '&edit_section=' . $sectionId : '');
+
+        if ($sectionId === null || $termId === null || $capacity === null || $capacity < 1) {
+            header('Location: ' . $redirectEdit . '&msg=section_invalid');
+            exit;
+        }
+
+        $schk = $pdo->prepare('SELECT section_id, course_id, term_id FROM sections WHERE section_id = ? LIMIT 1');
+        $schk->execute([$sectionId]);
+        $sectionRow = $schk->fetch(PDO::FETCH_ASSOC);
+        if (!$sectionRow || (int)($sectionRow['term_id'] ?? 0) !== $termId) {
+            header('Location: ' . $redirectBase . '&msg=section_invalid');
+            exit;
+        }
+        $courseId = (string)($sectionRow['course_id'] ?? '');
+
+        if ($facultyId !== null) {
+            $fchk = $pdo->prepare('SELECT 1 FROM faculty WHERE faculty_id = ? LIMIT 1');
+            $fchk->execute([$facultyId]);
+            if (!$fchk->fetchColumn()) {
+                $facultyId = null;
+            }
+        }
+
+        $hasDays = $meetingDays !== '';
+        $hasTime = $meetingTime !== '';
+        if ($hasDays xor $hasTime) {
+            header('Location: ' . $redirectEdit . '&msg=section_invalid');
+            exit;
+        }
+        if ($hasDays && !schedule_days_valid($meetingDays)) {
+            header('Location: ' . $redirectEdit . '&msg=section_invalid');
+            exit;
+        }
+        if ($hasTime && !schedule_time_valid($meetingTime)) {
+            header('Location: ' . $redirectEdit . '&msg=section_invalid');
+            exit;
+        }
+
+        if ($hasDays && $hasTime) {
+            $conflict = admin_find_section_schedule_conflict($pdo, $termId, $meetingDays, $meetingTime, $room !== '' ? $room : null, $facultyId, $sectionId);
+            if ($conflict !== null) {
+                $reason = ($conflict['reason'] ?? '') === 'room' ? 'room' : 'instructor';
+                header('Location: ' . $redirectEdit . '&msg=section_conflict&conflict_reason=' . rawurlencode($reason) . '&conflict_course=' . rawurlencode((string)($conflict['course_id'] ?? '')));
+                exit;
+            }
+        }
+
+        try {
+            $pdo->prepare('
+              UPDATE sections
+              SET faculty_id = ?, meeting_days = ?, meeting_time = ?, room = ?, capacity = ?
+              WHERE section_id = ?
+            ')->execute([
+                $facultyId,
+                $hasDays ? $meetingDays : null,
+                $hasTime ? $meetingTime : null,
+                $room !== '' ? $room : null,
+                $capacity,
+                $sectionId,
+            ]);
+        } catch (Throwable) {
+            header('Location: ' . $redirectEdit . '&msg=section_invalid');
+            exit;
+        }
+        admin_audit($pdo, 'section_update', $courseId . ' section #' . $sectionId . ' term ' . $termId);
+        header('Location: ' . $redirectBase . '&msg=section_updated&highlight_section=' . $sectionId);
         exit;
     }
 
@@ -2047,7 +2128,8 @@ function nav_group_label(string $label): string
         'grade_saved' => ['success', 'Transcript grade saved.'],
         'grade_invalid' => ['error', 'Grade was not saved — check course, term, and letter grade.'],
         'section_saved' => ['success', 'New section created and added to the schedule.'],
-        'section_invalid' => ['error', 'Could not create section — pick course and term, capacity ≥ 1, and use matching days (MWF/TR) + time (10:00-11:15) together or leave both blank.'],
+        'section_updated' => ['success', 'Section updated — instructor and schedule saved.'],
+        'section_invalid' => ['error', 'Could not save section — capacity ≥ 1, and use matching days (MWF/TR) + time (10:00-11:15) together or leave both blank.'],
         'section_conflict' => ['error', 'Schedule conflict — that instructor or room already has a class at overlapping days/times this term.'],
     ];
     if ($flashMsg !== '' && isset($flashMap[$flashMsg])) {
@@ -2573,14 +2655,16 @@ function nav_group_label(string $label): string
             try {
                 $catalogCourses = $pdo->query('
                   SELECT c.course_id, c.course_name, c.credits, c.dept_id, c.description,
-                    IFNULL(c.is_active, 1) AS is_active, d.dept_name
+                    IFNULL(c.is_active, 1) AS is_active, d.dept_name,
+                    (SELECT COUNT(*) FROM course_prereqs cp WHERE cp.course_id = c.course_id) AS prereq_count
                   FROM courses c
                   LEFT JOIN departments d ON d.dept_id = c.dept_id
                   ORDER BY c.course_id
                 ')->fetchAll(PDO::FETCH_ASSOC) ?: [];
             } catch (Throwable) {
                 $catalogCourses = $pdo->query('
-                  SELECT c.course_id, c.course_name, c.credits, c.dept_id, d.dept_name
+                  SELECT c.course_id, c.course_name, c.credits, c.dept_id, d.dept_name,
+                    (SELECT COUNT(*) FROM course_prereqs cp WHERE cp.course_id = c.course_id) AS prereq_count
                   FROM courses c
                   LEFT JOIN departments d ON d.dept_id = c.dept_id
                   ORDER BY c.course_id
@@ -2588,6 +2672,7 @@ function nav_group_label(string $label): string
                 foreach ($catalogCourses as &$cc) {
                     $cc['description'] = null;
                     $cc['is_active'] = 1;
+                    $cc['prereq_count'] = (int)($cc['prereq_count'] ?? 0);
                 }
                 unset($cc);
             }

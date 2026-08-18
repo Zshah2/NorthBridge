@@ -60,11 +60,13 @@ ON DUPLICATE KEY UPDATE
   description = VALUES(description),
   is_active = VALUES(is_active);
 
+-- Prerequisites: BI0101 requires BIO0098, CHE0105, and BIO101 (3 prereqs — useful for catalog UI demo).
 INSERT IGNORE INTO course_prereqs (course_id, prereq_course_id) VALUES
 ('ENG102', 'ENG101'),
 ('CS201', 'CS101'),
 ('BI0101', 'BIO0098'),
-('BI0101', 'CHE0105');
+('BI0101', 'CHE0105'),
+('BI0101', 'BIO101');
 
 -- Fall 2026 sections (skip if this course+term already has a row).
 INSERT INTO sections (course_id, term_id, faculty_id, meeting_days, meeting_time, room, capacity)

@@ -121,6 +121,8 @@ function admin_course_offerings_state(PDO $pdo, array $get): array
         $sql = "
           SELECT
             s.section_id,
+            s.term_id,
+            s.faculty_id,
             c.course_id,
             c.course_name,
             c.credits,
@@ -150,6 +152,56 @@ function admin_course_offerings_state(PDO $pdo, array $get): array
             $rows = $st->fetchAll(PDO::FETCH_ASSOC) ?: [];
         } catch (Throwable) {
             $rows = [];
+        }
+
+        $editSectionId = isset($get['edit_section']) && ctype_digit((string)$get['edit_section'])
+            ? (int)$get['edit_section']
+            : null;
+        if ($editSectionId !== null && $editSectionId > 0) {
+            $found = false;
+            foreach ($rows as $row) {
+                if ((int)($row['section_id'] ?? 0) === $editSectionId) {
+                    $found = true;
+                    break;
+                }
+            }
+            if (!$found) {
+                try {
+                    $est = $pdo->prepare("
+                      SELECT
+                        s.section_id,
+                        s.term_id,
+                        s.faculty_id,
+                        c.course_id,
+                        c.course_name,
+                        c.credits,
+                        c.dept_id,
+                        t.code AS term_code,
+                        t.name AS term_name,
+                        u.first_name AS fac_first,
+                        u.last_name AS fac_last,
+                        s.meeting_days,
+                        s.meeting_time,
+                        s.room,
+                        s.capacity,
+                        (SELECT COUNT(*) FROM enrollments e
+                         WHERE e.section_id = s.section_id AND e.status = 'enrolled') AS enrolled_count
+                      FROM sections s
+                      JOIN courses c ON c.course_id = s.course_id
+                      JOIN terms t ON t.term_id = s.term_id
+                      LEFT JOIN faculty f ON f.faculty_id = s.faculty_id
+                      LEFT JOIN users u ON u.user_id = f.faculty_id
+                      WHERE s.section_id = ? AND s.term_id = ?
+                      LIMIT 1
+                    ");
+                    $est->execute([$editSectionId, $termId]);
+                    $editRow = $est->fetch(PDO::FETCH_ASSOC);
+                    if ($editRow) {
+                        array_unshift($rows, $editRow);
+                    }
+                } catch (Throwable) {
+                }
+            }
         }
     } else {
         $totalPages = 1;
