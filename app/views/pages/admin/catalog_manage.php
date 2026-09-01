@@ -234,7 +234,19 @@ foreach ($allCourseIds as $pcid) {
               <a class="text-indigo-700 hover:underline dark:text-indigo-300" href="<?= htmlspecialchars(url('/admin.php?' . http_build_query(['view' => 'course', 'course_id' => (string)$c['course_id']]))) ?>"><?= htmlspecialchars((string)$c['course_name']) ?></a>
             </td>
             <td class="px-4 py-3"><?= (int)$c['credits'] ?></td>
-            <td class="px-4 py-3 text-slate-600 dark:text-slate-400"><?= htmlspecialchars((string)($c['dept_name'] ?? '—')) ?></td>
+            <td class="px-4 py-3 text-slate-600 dark:text-slate-400">
+              <?php
+                $cDeptId = trim((string)($c['dept_id'] ?? ''));
+                $cDeptName = trim((string)($c['dept_name'] ?? ''));
+              ?>
+              <?php if ($cDeptId !== ''): ?>
+                <a class="<?= htmlspecialchars(ui_link()) ?>" href="<?= htmlspecialchars(url('/admin.php?' . http_build_query(['view' => 'department', 'dept_id' => $cDeptId]))) ?>">
+                  <?= htmlspecialchars($cDeptName !== '' ? $cDeptName : $cDeptId) ?>
+                </a>
+              <?php else: ?>
+                —
+              <?php endif; ?>
+            </td>
             <td class="px-4 py-3 tabular-nums text-slate-600 dark:text-slate-400">
               <?php $pc = (int)($c['prereq_count'] ?? 0); ?>
               <?= $pc === 0 ? '—' : ($pc === 1 ? '1 prereq' : $pc . ' prereqs') ?>

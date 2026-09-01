@@ -42,8 +42,8 @@
 
 <section id="visit" class="nb-home-band border-t border-slate-200 bg-gradient-to-b from-indigo-50 via-white to-slate-50 dark:border-fuchsia-500/15 dark:from-indigo-950/60 dark:via-[#0a0f1f] dark:to-[#0a0f1f]">
   <div class="mx-auto max-w-6xl px-4 py-14 sm:px-6">
-    <div class="grid gap-10 lg:grid-cols-12 lg:items-center">
-      <div class="lg:col-span-6">
+    <div class="grid gap-10 lg:grid-cols-12 lg:items-start">
+      <div class="lg:col-span-5">
         <div class="nb-home-accent text-sm font-semibold text-indigo-600 dark:text-cyan-300">Campus life</div>
         <h2 class="nb-home-heading mt-2 text-2xl font-semibold tracking-tight text-slate-900 dark:text-white sm:text-3xl">A place to belong—and grow</h2>
         <p class="nb-home-body mt-3 text-sm text-slate-600 dark:text-slate-300">
@@ -69,53 +69,49 @@
         </div>
       </div>
 
-      <div class="lg:col-span-6">
+      <div class="lg:col-span-7">
         <div class="nb-home-panel overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-xl dark:border-fuchsia-500/30 dark:bg-gradient-to-br dark:from-violet-950/40 dark:to-fuchsia-950/25 dark:shadow-fuchsia-950/20">
-          <div class="grid gap-0 sm:grid-cols-2">
-            <div class="relative">
-              <img
-                src="<?= htmlspecialchars(url('/assets/img/students-walking.jpg')) ?>"
-                alt="Students walking on campus"
-                class="h-full min-h-[14rem] w-full object-cover"
-                loading="lazy"
-                decoding="async"
-              />
+          <img
+            src="<?= htmlspecialchars(url('/assets/img/students-walking.jpg')) ?>"
+            alt="Students walking on campus"
+            class="h-56 w-full object-cover object-center sm:h-72"
+            loading="lazy"
+            decoding="async"
+          />
+          <div class="nb-home-visit-panel p-6">
+            <div class="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <div class="nb-home-visit-title text-sm font-semibold text-slate-900 dark:text-white">Plan your visit</div>
+                <div class="nb-home-body mt-1 text-sm text-slate-600 dark:text-slate-300">Tours, info sessions, and advisor meetings.</div>
+              </div>
+              <a href="#contact" class="inline-flex shrink-0 items-center justify-center rounded-2xl bg-gradient-to-r from-fuchsia-600 to-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-fuchsia-900/40 transition hover:from-fuchsia-500 hover:to-violet-500">
+                Contact admissions
+              </a>
             </div>
-            <div class="nb-home-visit-panel relative p-6">
-              <div class="flex flex-wrap items-center justify-between gap-3">
-                <div>
-                  <div class="nb-home-visit-title text-sm font-semibold text-slate-900 dark:text-white">Plan your visit</div>
-                  <div class="nb-home-body mt-1 text-sm text-slate-600 dark:text-slate-300">Tours, info sessions, and advisor meetings.</div>
-                </div>
-                <a href="#contact" class="rounded-2xl bg-gradient-to-r from-fuchsia-600 to-violet-600 px-4 py-2 text-sm font-semibold text-white shadow-md shadow-fuchsia-900/40 transition hover:from-fuchsia-500 hover:to-violet-500">
-                  Contact admissions
-                </a>
+            <div class="mt-5 grid gap-3 sm:grid-cols-2">
+              <div class="nb-home-stat rounded-3xl border border-indigo-200 bg-indigo-50 p-4 dark:border-cyan-500/25 dark:bg-black/25">
+                <div class="nb-home-stat-label text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-cyan-300/80">Where</div>
+                <div class="nb-home-stat-value mt-1 text-base font-semibold text-slate-900 dark:text-white">Northbridge Campus</div>
+                <div class="nb-home-body mt-1 text-sm text-slate-600 dark:text-slate-300">Student center check-in</div>
               </div>
-              <div class="mt-5 grid gap-3 sm:grid-cols-2">
-                <div class="nb-home-stat rounded-3xl border border-indigo-200 bg-indigo-50 p-4 dark:border-cyan-500/25 dark:bg-black/25">
-                  <div class="nb-home-stat-label text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-cyan-300/80">Where</div>
-                  <div class="nb-home-stat-value mt-1 text-base font-semibold text-slate-900 dark:text-white">Northbridge Campus</div>
-                  <div class="nb-home-body mt-1 text-sm text-slate-600 dark:text-slate-300">Student center check-in</div>
-                </div>
-                <div class="nb-home-stat rounded-3xl border border-indigo-200 bg-indigo-50 p-4 dark:border-cyan-500/25 dark:bg-black/25">
-                  <div class="nb-home-stat-label text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-cyan-300/80">What to bring</div>
-                  <div class="nb-home-stat-value mt-1 text-base font-semibold text-slate-900 dark:text-white">Questions + curiosity</div>
-                  <div class="nb-home-body mt-1 text-sm text-slate-600 dark:text-slate-300">We’ll handle the rest.</div>
-                </div>
+              <div class="nb-home-stat rounded-3xl border border-indigo-200 bg-indigo-50 p-4 dark:border-cyan-500/25 dark:bg-black/25">
+                <div class="nb-home-stat-label text-xs font-semibold uppercase tracking-wide text-violet-700 dark:text-cyan-300/80">What to bring</div>
+                <div class="nb-home-stat-value mt-1 text-base font-semibold text-slate-900 dark:text-white">Questions + curiosity</div>
+                <div class="nb-home-body mt-1 text-sm text-slate-600 dark:text-slate-300">We’ll handle the rest.</div>
               </div>
-              <div class="mt-5 grid gap-3 sm:grid-cols-3">
-                <div class="nb-home-stat rounded-3xl border border-indigo-200 bg-indigo-50 p-4 dark:border-fuchsia-500/20 dark:bg-black/25">
-                  <div class="nb-home-stat-label text-xs text-violet-700 dark:text-fuchsia-300/80">Student-to-faculty</div>
-                  <div class="nb-home-stat-value mt-1 text-lg font-semibold text-indigo-900 dark:text-cyan-100">12:1</div>
-                </div>
-                <div class="nb-home-stat rounded-3xl border border-indigo-200 bg-indigo-50 p-4 dark:border-fuchsia-500/20 dark:bg-black/25">
-                  <div class="nb-home-stat-label text-xs text-violet-700 dark:text-fuchsia-300/80">Average class size</div>
-                  <div class="nb-home-stat-value mt-1 text-lg font-semibold text-indigo-900 dark:text-cyan-100">22</div>
-                </div>
-                <div class="nb-home-stat rounded-3xl border border-indigo-200 bg-indigo-50 p-4 dark:border-fuchsia-500/20 dark:bg-black/25">
-                  <div class="nb-home-stat-label text-xs text-violet-700 dark:text-fuchsia-300/80">Internship partners</div>
-                  <div class="nb-home-stat-value mt-1 text-lg font-semibold text-indigo-900 dark:text-cyan-100">300+</div>
-                </div>
+            </div>
+            <div class="mt-5 grid gap-3 sm:grid-cols-3">
+              <div class="nb-home-stat rounded-3xl border border-indigo-200 bg-indigo-50 p-4 dark:border-fuchsia-500/20 dark:bg-black/25">
+                <div class="nb-home-stat-label text-xs text-violet-700 dark:text-fuchsia-300/80">Student-to-faculty</div>
+                <div class="nb-home-stat-value mt-1 text-lg font-semibold text-indigo-900 dark:text-cyan-100">12:1</div>
+              </div>
+              <div class="nb-home-stat rounded-3xl border border-indigo-200 bg-indigo-50 p-4 dark:border-fuchsia-500/20 dark:bg-black/25">
+                <div class="nb-home-stat-label text-xs text-violet-700 dark:text-fuchsia-300/80">Average class size</div>
+                <div class="nb-home-stat-value mt-1 text-lg font-semibold text-indigo-900 dark:text-cyan-100">22</div>
+              </div>
+              <div class="nb-home-stat rounded-3xl border border-indigo-200 bg-indigo-50 p-4 dark:border-fuchsia-500/20 dark:bg-black/25">
+                <div class="nb-home-stat-label text-xs text-violet-700 dark:text-fuchsia-300/80">Internship partners</div>
+                <div class="nb-home-stat-value mt-1 text-lg font-semibold text-indigo-900 dark:text-cyan-100">300+</div>
               </div>
             </div>
           </div>

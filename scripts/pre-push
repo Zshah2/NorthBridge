@@ -1,0 +1,24 @@
+#!/usr/bin/env bash
+# Optional git hook: blocks direct pushes to main.
+# Install (opt-in, per clone):
+#   cp scripts/pre-push .git/hooks/pre-push && chmod +x .git/hooks/pre-push
+# Remove: rm .git/hooks/pre-push
+
+protected_branch='main'
+current_branch="$(git symbolic-ref HEAD 2>/dev/null | sed 's|.*/||')"
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  if [[ "$remote_ref" == "refs/heads/$protected_branch" ]]; then
+    echo
+    echo "ERROR: Direct push to '$protected_branch' is not allowed."
+    echo
+    echo "  git checkout -b feature/your-name-topic"
+    echo "  git push -u origin feature/your-name-topic"
+    echo "  # open a Pull Request on GitHub"
+    echo
+    echo "See CONTRIBUTING.md"
+    exit 1
+  fi
+done
+
+exit 0

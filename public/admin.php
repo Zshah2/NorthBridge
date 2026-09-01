@@ -37,7 +37,7 @@ if ($defaultMaxCredits < 1) {
 }
 
 $view = (string)($_GET['view'] ?? 'dashboard');
-$validViews = ['dashboard', 'people', 'schedule', 'courses', 'course', 'enrollment', 'departments', 'registration', 'reports', 'messages', 'settings', 'catalog', 'terms', 'holds', 'accounts'];
+$validViews = ['dashboard', 'people', 'schedule', 'courses', 'course', 'enrollment', 'departments', 'department', 'registration', 'reports', 'messages', 'settings', 'catalog', 'terms', 'holds', 'accounts'];
 if (!in_array($view, $validViews, true)) {
     $view = 'dashboard';
 }
@@ -179,7 +179,7 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
         exit;
     }
     if ($isLimited) {
-        $blocked = ['grade_upsert', 'people_scr_upsert', 'catalog_course_save', 'catalog_prereqs_save', 'section_save', 'section_update', 'term_registration_save', 'auth_password_reset', 'auth_login_save', 'auth_email_save', 'auth_user_active', 'reg_promote'];
+        $blocked = ['grade_upsert', 'people_scr_upsert', 'catalog_course_save', 'catalog_prereqs_save', 'section_save', 'section_update', 'department_save', 'department_chair_save', 'term_registration_save', 'auth_password_reset', 'auth_login_save', 'auth_email_save', 'auth_user_active', 'reg_promote'];
         $act = (string)($_POST['action'] ?? '');
         if (in_array($act, $blocked, true)) {
             header('Location: ' . url('/admin.php?view=' . rawurlencode($view) . '&msg=forbidden'));
@@ -773,6 +773,98 @@ if (($_SERVER['REQUEST_METHOD'] ?? '') === 'POST') {
             }
         }
         header('Location: ' . url('/admin.php?view=people&id=' . $redirectId . '&people_panel=info&msg=grade_invalid'));
+        exit;
+    }
+
+    if ($action === 'department_chair_save' && $isAdmin) {
+        $deptId = strtoupper(trim((string)($_POST['dept_id'] ?? '')));
+        $chairRaw = trim((string)($_POST['chair_id'] ?? ''));
+        $redirect = url('/admin.php?' . http_build_query(['view' => 'department', 'dept_id' => $deptId]));
+
+        if ($deptId === '') {
+            header('Location: ' . url('/admin.php?view=departments&msg=chair_invalid'));
+            exit;
+        }
+
+        $dchk = $pdo->prepare('SELECT 1 FROM departments WHERE dept_id = ? LIMIT 1');
+        $dchk->execute([$deptId]);
+        if (!$dchk->fetchColumn()) {
+            header('Location: ' . url('/admin.php?view=departments&msg=chair_invalid'));
+            exit;
+        }
+
+        $chairId = null;
+        if ($chairRaw !== '') {
+            if (!ctype_digit($chairRaw)) {
+                header('Location: ' . $redirect . '&msg=chair_invalid');
+                exit;
+            }
+            $chairId = (int)$chairRaw;
+            $fchk = $pdo->prepare('SELECT 1 FROM faculty WHERE faculty_id = ? LIMIT 1');
+            $fchk->execute([$chairId]);
+            if (!$fchk->fetchColumn()) {
+                header('Location: ' . $redirect . '&msg=chair_invalid');
+                exit;
+            }
+        }
+
+        try {
+            $pdo->prepare('UPDATE departments SET chair_id = ? WHERE dept_id = ?')->execute([$chairId, $deptId]);
+        } catch (Throwable) {
+            header('Location: ' . $redirect . '&msg=chair_invalid');
+            exit;
+        }
+
+        admin_audit($pdo, 'department_chair_save', $deptId . ' chair_id=' . ($chairId ?? 'null'));
+        header('Location: ' . $redirect . '&msg=chair_saved');
+        exit;
+    }
+
+    if ($action === 'department_save' && $isAdmin) {
+        $deptId = strtoupper(trim((string)($_POST['dept_id'] ?? '')));
+        $deptName = trim((string)($_POST['dept_name'] ?? ''));
+        $building = trim((string)($_POST['building_number'] ?? ''));
+        $room = trim((string)($_POST['room_number'] ?? ''));
+        $email = trim((string)($_POST['email'] ?? ''));
+        $phone = trim((string)($_POST['phone_number'] ?? ''));
+        $assistant = trim((string)($_POST['dept_assistant'] ?? ''));
+
+        if ($deptId === '' || $deptName === '' || strlen($deptId) > 10 || !preg_match('/^[A-Z0-9]+$/', $deptId)) {
+            header('Location: ' . url('/admin.php?view=departments&msg=dept_invalid'));
+            exit;
+        }
+
+        $dchk = $pdo->prepare('SELECT 1 FROM departments WHERE dept_id = ? LIMIT 1');
+        $dchk->execute([$deptId]);
+        if ($dchk->fetchColumn()) {
+            header('Location: ' . url('/admin.php?view=departments&msg=dept_exists'));
+            exit;
+        }
+
+        try {
+            $pdo->prepare('
+              INSERT INTO departments (dept_id, dept_name, room_number, building_number, email, phone_number, dept_assistant)
+              VALUES (?, ?, ?, ?, ?, ?, ?)
+            ')->execute([
+                $deptId,
+                $deptName,
+                $room !== '' ? $room : null,
+                $building !== '' ? $building : null,
+                $email !== '' ? $email : null,
+                $phone !== '' ? $phone : null,
+                $assistant !== '' ? $assistant : null,
+            ]);
+        } catch (Throwable) {
+            header('Location: ' . url('/admin.php?view=departments&msg=dept_invalid'));
+            exit;
+        }
+
+        admin_audit($pdo, 'department_save', $deptId);
+        header('Location: ' . url('/admin.php?' . http_build_query([
+            'view' => 'departments',
+            'msg' => 'dept_saved',
+            'created' => $deptId,
+        ])));
         exit;
     }
 
@@ -2131,6 +2223,11 @@ function nav_group_label(string $label): string
         'section_updated' => ['success', 'Section updated — instructor and schedule saved.'],
         'section_invalid' => ['error', 'Could not save section — capacity ≥ 1, and use matching days (MWF/TR) + time (10:00-11:15) together or leave both blank.'],
         'section_conflict' => ['error', 'Schedule conflict — that instructor or room already has a class at overlapping days/times this term.'],
+        'chair_saved' => ['success', 'Department chair saved.'],
+        'chair_invalid' => ['error', 'Chair was not saved — pick a valid faculty member or clear the assignment.'],
+        'dept_saved' => ['success', 'Department created. Click it in the directory below to open it.'],
+        'dept_invalid' => ['error', 'Department was not saved — use a unique code (letters/numbers, max 10) and a name.'],
+        'dept_exists' => ['error', 'That department code already exists.'],
     ];
     if ($flashMsg !== '' && isset($flashMap[$flashMsg])) {
         [$ftone, $ftext] = $flashMap[$flashMsg];
@@ -2318,7 +2415,7 @@ function nav_group_label(string $label): string
               <div class="mt-2 text-3xl font-semibold tabular-nums"><?= (int)($counts['courses_active_term'] ?? 0) ?></div>
               <div class="mt-2 text-xs text-slate-500"><?= (int)($dash['term_sections'] ?? 0) ?> sections · <?= (int)($counts['courses_catalog'] ?? 0) ?> courses in catalog</div>
             </div>
-            <div class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-700 dark:bg-slate-900">
+            <a class="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm transition hover:border-indigo-300 hover:shadow-md dark:border-slate-700 dark:bg-slate-900" href="<?= htmlspecialchars(url('/admin.php?view=departments')) ?>">
               <div class="text-xs font-semibold uppercase text-slate-500">Departments</div>
               <div class="mt-2 text-3xl font-semibold tabular-nums"><?= (int)($counts['departments'] ?? 0) ?></div>
               <div class="mt-2 text-xs text-slate-500">
@@ -2327,7 +2424,7 @@ function nav_group_label(string $label): string
                 <?= (int)($dash['term_waitlisted'] ?? 0) ?> waitlisted ·
                 <?= (int)($dash['term_open_seats'] ?? 0) ?> open seats
               </div>
-            </div>
+            </a>
           </div>
 
           <div class="mt-8 grid gap-6 lg:grid-cols-3">
@@ -4452,45 +4549,21 @@ function nav_group_label(string $label): string
             </table>
           </div>
 
-        <?php elseif ($view === 'departments'): ?>
-          <h1 class="text-2xl font-semibold text-slate-900 dark:text-white">Departments</h1>
-          <p class="mt-2 text-sm text-slate-600">All departments available in the system.</p>
+        <?php elseif ($view === 'department'): ?>
           <?php
-          $depts = $pdo->query('
-            SELECT dept_id, dept_name
-            FROM departments
-            ORDER BY dept_name, dept_id
-          ')->fetchAll(PDO::FETCH_ASSOC);
+          require_once __DIR__ . '/../app/lib/admin_department_detail.php';
+          $departmentDetailState = admin_department_detail_state($pdo, $_GET);
+          extract($departmentDetailState, EXTR_SKIP);
+          require view_path('pages/admin/department_detail.php');
           ?>
-          <div class="mt-4 overflow-x-auto rounded-2xl border border-slate-200 bg-white">
-            <table class="min-w-full table-fixed text-sm">
-              <thead class="border-b border-slate-200 text-xs uppercase text-slate-500">
-                <tr>
-                  <th class="w-28 px-3 py-2 sm:px-4 sm:py-3">Dept ID</th>
-                  <th class="px-3 py-2 sm:px-4 sm:py-3">Department</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-200">
-                <?php foreach ($depts as $d): ?>
-                  <tr>
-                    <td class="px-3 py-2 sm:px-4 sm:py-3 align-top">
-                      <span class="inline-flex max-w-full rounded-md bg-sky-100 px-2 py-0.5 font-mono text-xs font-semibold tabular-nums text-sky-950 ring-1 ring-inset ring-sky-200/90">
-                        <?= htmlspecialchars((string)($d['dept_id'] ?? '')) ?>
-                      </span>
-                    </td>
-                    <td class="px-3 py-2 sm:px-4 sm:py-3 font-medium text-slate-900">
-                      <div class="break-words" title="<?= htmlspecialchars((string)($d['dept_name'] ?? '')) ?>">
-                        <?= htmlspecialchars((string)($d['dept_name'] ?? '')) ?>
-                      </div>
-                    </td>
-                  </tr>
-                <?php endforeach; ?>
-                <?php if (!$depts): ?>
-                  <tr><td class="px-4 py-8 text-center text-slate-500" colspan="2">No departments found.</td></tr>
-                <?php endif; ?>
-              </tbody>
-            </table>
-          </div>
+
+        <?php elseif ($view === 'departments'): ?>
+          <?php
+          require_once __DIR__ . '/../app/lib/admin_departments_list.php';
+          $departmentsListState = admin_departments_list_state($pdo);
+          extract($departmentsListState, EXTR_SKIP);
+          require view_path('pages/admin/departments_list.php');
+          ?>
 
         <?php else: /* registration */ ?>
           <?php

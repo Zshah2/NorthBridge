@@ -1,12 +1,16 @@
 <?php
 
 /**
- * Copy this file to database.local.php (same folder) for local MySQL.
- * database.local.php is gitignored — put real credentials only there.
+ * Local MySQL credentials (copy → database.local.php in this same folder).
  *
- * On cloud hosts, use DB_* or MYSQL_* environment variables instead (see docs/DEPLOY.md).
+ *   cp app/config/database.local.php.example app/config/database.local.php
  *
- * Env vars override this file when set.
+ * database.local.php is gitignored — never commit real passwords.
+ *
+ * Alternative: set env vars instead (they override this file):
+ *   export DB_HOST=127.0.0.1 DB_PORT=3306 DB_NAME=collegeweb DB_USER=root DB_PASS='...'
+ *
+ * Cloud hosts: use DB_* or MYSQL_* env vars (see docs/DEPLOY.md).
  */
 
 declare(strict_types=1);
@@ -14,7 +18,7 @@ declare(strict_types=1);
 return [
     'host' => '127.0.0.1',
     'port' => 3306,
-    'database' => 'your_database_name',
-    'username' => 'your_database_user',
-    'password' => 'your_database_password',
+    'database' => 'collegeweb',      // create with: mysql -e "CREATE DATABASE collegeweb ..."
+    'username' => 'root',              // your local MySQL user
+    'password' => 'your_password_here',
 ];

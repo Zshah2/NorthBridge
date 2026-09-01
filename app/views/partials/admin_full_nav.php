@@ -24,7 +24,7 @@ $adminNavGroup = static function (string $label): string {
   <?= $adminNavGroup('Scheduling & enrollment') ?>
   <?= $adminNavItem(url('/admin.php?view=courses'), 'Courses', $view === 'courses' || $view === 'course') ?>
   <?= $adminNavItem(url('/admin.php?view=enrollment'), 'Enrollment', $view === 'enrollment') ?>
-  <?= $adminNavItem(url('/admin.php?view=departments'), 'Departments', $view === 'departments') ?>
+  <?= $adminNavItem(url('/admin.php?view=departments'), 'Departments', $view === 'departments' || $view === 'department') ?>
   <?= $adminNavItem(url('/admin.php?view=registration'), 'Registration', $view === 'registration') ?>
   <?php if ($isAdmin): ?>
     <?= $adminNavGroup('Catalog & records') ?>

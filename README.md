@@ -2,13 +2,23 @@
 
 PHP + MySQL (PDO) + Tailwind. Public site uses the front controller (`public/index.php`); **admins** use **`public/login.php`** and the unified **`public/admin.php`** dashboard.
 
+### For teammates
+
+If you were invited as a GitHub collaborator:
+
+1. Read **[CONTRIBUTING.md](CONTRIBUTING.md)** — **never push directly to `main`**; always use a feature branch and Pull Request.
+2. Follow **[docs/COLLAB.md](docs/COLLAB.md)** for clone → DB → migrate → run server.
+3. Quick setup: `bash scripts/setup_teammate.sh` (after configuring DB; see below).
+
+Branch example: `git checkout -b feature/your-name-topic` from latest `main`.
+
 ### Admin accounts (local only)
 
 Demo usernames and passwords are **not** stored in this repo. After cloning, copy `docs/LOGIN_CREDENTIALS.txt.example` → `docs/LOGIN_CREDENTIALS.txt` and fill in values for your machine (that file is gitignored).
 
 ### Database credentials
 
-The app connects through **`app/lib/db.php`**. On a cloud host, set `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS` (and `DB_PORT` if needed) in the platform’s environment variables — or the `MYSQL_*` aliases (see [docs/DEPLOY.md](docs/DEPLOY.md)). Locally, copy **`app/config/database.local.php.example`** → **`database.local.php`**.
+The app connects through **`app/lib/db.php`**. On a cloud host, set `DB_HOST`, `DB_NAME`, `DB_USER`, `DB_PASS` (and `DB_PORT` if needed) in the platform’s environment variables — or the `MYSQL_*` aliases (see [docs/DEPLOY.md](docs/DEPLOY.md)). Locally, copy **`app/config/database.local.php.example`** → **`app/config/database.local.php`** (same folder) and edit host, database name, user, and password.
 
 If you see **“Cannot connect to MySQL”** on the login page, MySQL may be stopped **or** the DB user/password in your local config does not match your server.
 

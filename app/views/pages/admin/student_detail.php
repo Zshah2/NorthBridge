@@ -85,7 +85,12 @@ $can_manage_holds = $can_manage_holds ?? false;
         <?php else: ?>
           <?php foreach ($departments as $d): ?>
             <div class="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3 dark:border-slate-700 dark:bg-slate-950">
-              <div class="text-sm font-semibold text-slate-900 dark:text-white"><?= htmlspecialchars($d['dept_name']) ?> <span class="text-slate-500">(<?= htmlspecialchars($d['dept_id']) ?>)</span></div>
+              <div class="text-sm font-semibold text-slate-900 dark:text-white">
+                <a class="<?= htmlspecialchars(ui_link()) ?>" href="<?= htmlspecialchars(url('/admin.php?' . http_build_query(['view' => 'department', 'dept_id' => (string)$d['dept_id']]))) ?>">
+                  <?= htmlspecialchars((string)$d['dept_name']) ?>
+                </a>
+                <span class="text-slate-500">(<?= htmlspecialchars((string)$d['dept_id']) ?>)</span>
+              </div>
               <div class="mt-1 text-xs text-slate-500">Declared: <?= htmlspecialchars((string)($d['date_of_declaration'] ?? '')) ?></div>
             </div>
           <?php endforeach; ?>
