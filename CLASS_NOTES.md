@@ -1,5 +1,43 @@
 # NorthBridge Class Notes
 
+## Course and Team Context
+
+- Course: CS5910-HY2, Fall 2026
+- Keep all team members up to date on project progress.
+- Each member should prepare for and understand their assigned work, meet milestones, communicate problems promptly, attend meetings, and respond to team communications.
+- Address project communication to all team members.
+- Test each new module as it is added and use unit testing.
+- Remain professional with teammates and in project documentation and presentations.
+
+### Team Information
+
+| Team member | Email | Cell | Role |
+| --- | --- | --- | --- |
+| To be defined | To be defined | To be defined | To be defined |
+| To be defined | To be defined | To be defined | To be defined |
+| To be defined | To be defined | To be defined | To be defined |
+
+## Technology
+
+- Front end: HTML5, CSS, and JavaScript
+- Back end: PHP and SQL
+- Database: MySQL
+- Hosting: AWS
+
+## Requirements Terminology
+
+- Explicitly required: behavior the client requires.
+- Explicitly forbidden: behavior the client prohibits.
+- Client-silent behavior: behavior not specified by the client.
+- `R(SRS)`: required behavior in the software requirements specification.
+- `F(SRS)`: forbidden behavior in the software requirements specification.
+- `R(M)`: liveness criteria in the system model.
+- `F(M)`: safety criteria in the system model.
+- If `R(M)` is a subset of `R(SRS)`, the model is incomplete.
+- If `R(SRS)` is a subset of `R(M)`, the model has extraneous behavior.
+- The model is incomplete or incorrect when required SRS behavior is missing or contradicted by forbidden model behavior.
+- The model is unsafe when it permits behavior that the SRS forbids.
+
 ## Master Schedule
 
 The master schedule should show:
@@ -20,6 +58,43 @@ The master schedule should show:
 - Faculty
 - Admin
 - Statistics department member
+
+## User and Login Data
+
+- User ID: six-digit, randomly generated identifier
+- User fields: user ID, first name, middle name, last name, gender, date of birth, street, city, state, ZIP code, and user type
+- Login fields: user ID, email, password, login attempts, and locked status
+- Student classifications include undergraduate/graduate and full-time/part-time.
+- User IDs and email addresses cannot be changed by students or faculty.
+
+## Administration
+
+- Administrators are full-time only.
+- Administration assigns priority and security levels controlling database read/write access.
+- The system creates users for students, faculty, administrators, and statistics department members.
+- Administration manages users, departments, department courses, majors, minors, major requirements, minor requirements, prerequisites, terms, and course-sections.
+
+## Semester and Year Data
+
+- Generate or update users and their corresponding student classification records.
+- Generate or update departments and department courses.
+- Generate or update department majors and minor offerings.
+- Generate or update major and minor course requirements.
+- Generate or update course prerequisites.
+- Generate or update semester and year records.
+
+## Course-Section and Time-Slot Rules
+
+- A course-section includes a CRN, course, section number, credits, faculty, time slot, building, room, and available seats.
+- A time slot is chosen from days of the week and a period during each day.
+- Course-sections may have 5 to 10 available seats.
+- No course-section may conflict with another course-section in the same applicable resource or schedule.
+
+## Missing or Unclear Source Items
+
+- The source notes contain obscured text in the undergraduate/graduate registration restriction.
+- The source notes end with an incomplete item after “Generate/update course prerequisites.”
+- Team names, contact details, team leader, and LUSID testing credentials still need to be supplied separately. Credentials should not be committed to the repository.
 
 ## Student Requirements
 
@@ -71,6 +146,7 @@ The master schedule should show:
 - Part-time faculty may have no advisees.
 - Faculty cannot teach course-sections outside their departments.
 - Attendance cannot be marked outside the course-section's scheduled day/period.
+- Attendance cannot be changed after it has been recorded.
 - Grades can be assigned or changed only within 72 hours after the examination. After 72 hours, grades cannot be changed.
 - Faculty cannot change their user ID or email address.
 - Faculty may access student information, but cannot access unrelated non-student user information.
