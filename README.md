@@ -83,6 +83,16 @@ Then open `http://localhost:8000/` and `http://localhost:8000/login.php`.
 - MySQL 8+ (or compatible)
 - [Composer](https://getcomposer.org/) (optional; only needed if you enable email OTP later)
 
+### Health checks
+
+Run a quick validation pass before you compare branches or prepare changes:
+
+```bash
+composer run check
+```
+
+This validates PHP syntax across the app, config, public entry points, and scripts.
+
 ### Deploy (DigitalOcean, AWS, VPS)
 
 See **[docs/DEPLOY.md](docs/DEPLOY.md)** for environment variables (`DB_*`, `SMTP_*`), `composer install`, and `php scripts/migrate.php`. Moving servers: **[docs/MIGRATING_TO_DIFFERENT_SERVER.md](docs/MIGRATING_TO_DIFFERENT_SERVER.md)**.
