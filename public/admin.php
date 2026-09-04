@@ -2833,7 +2833,7 @@ function nav_group_label(string $label): string
           <?php
           $holdRows = [];
           try {
-              $holdRows = $pdo->query('
+              $rawHoldRows = $pdo->query('
                 SELECT h.student_id, h.hold_type, h.note, h.created_at, u.first_name, u.last_name
                 FROM student_holds h
                 LEFT JOIN users u ON u.user_id = h.student_id
@@ -2841,6 +2841,23 @@ function nav_group_label(string $label): string
                 ORDER BY h.created_at DESC
                 LIMIT 500
               ')->fetchAll(PDO::FETCH_ASSOC) ?: [];
+              foreach ($rawHoldRows as $holdRow) {
+                $studentKey = (string)((int)($holdRow['student_id'] ?? 0));
+                if (!isset($holdRows[$studentKey])) {
+                  $holdRows[$studentKey] = [
+                    'student_id' => (int)($holdRow['student_id'] ?? 0),
+                    'first_name' => $holdRow['first_name'] ?? null,
+                    'last_name' => $holdRow['last_name'] ?? null,
+                    'holds' => [],
+                  ];
+                }
+                $holdRows[$studentKey]['holds'][] = [
+                  'hold_type' => $holdRow['hold_type'] ?? '',
+                  'note' => $holdRow['note'] ?? '',
+                  'created_at' => $holdRow['created_at'] ?? '',
+                ];
+              }
+              $holdRows = array_values($holdRows);
           } catch (Throwable) {
           }
           require __DIR__ . '/../app/views/pages/admin/holds_directory.php';
@@ -3006,6 +3023,13 @@ function nav_group_label(string $label): string
                 </div>
                 <button class="rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white hover:bg-indigo-500 sm:shrink-0" type="submit"><?= $idLookupHasSearch ? 'Search again' : 'Search' ?></button>
               </form>
+              <div id="people-recent-searches" class="mt-4 hidden rounded-xl border border-slate-200 bg-slate-50 px-3 py-2.5" aria-live="polite">
+                <div class="flex flex-wrap items-center gap-2">
+                  <span class="text-xs font-semibold uppercase tracking-wide text-slate-500">Recent lookups</span>
+                  <div id="people-recent-search-links" class="flex flex-wrap gap-2"></div>
+                  <button id="people-clear-recent-searches" type="button" class="text-xs font-semibold text-slate-500 hover:text-slate-900">Clear</button>
+                </div>
+              </div>
             </div>
 
             <?php if (!$idLookupHasSearch): ?>
@@ -5098,6 +5122,53 @@ function nav_group_label(string $label): string
       document.addEventListener('keydown', function (e) {
         if (e.key === 'Escape') closeAll(null);
       });
+    })();
+
+    (function initPeopleRecentSearches() {
+      const form = document.querySelector('form[action*="admin.php"] input[name="view"][value="people"]');
+      const input = document.getElementById('people-id-q');
+      const recentWrap = document.getElementById('people-recent-searches');
+      const recentLinks = document.getElementById('people-recent-search-links');
+      const clearButton = document.getElementById('people-clear-recent-searches');
+      const storageKey = 'admin_people_recent_ids';
+      if (!form || !input || !recentWrap || !recentLinks || !clearButton) return;
+
+      const readRecent = function () {
+        try {
+          const parsed = JSON.parse(localStorage.getItem(storageKey) || '[]');
+          return Array.isArray(parsed) ? parsed.filter(function (id) { return /^\d+$/.test(String(id)); }).slice(0, 3) : [];
+        } catch (e) {
+          return [];
+        }
+      };
+
+      const renderRecent = function () {
+        const ids = readRecent();
+        recentLinks.innerHTML = '';
+        recentWrap.classList.toggle('hidden', ids.length === 0);
+        ids.forEach(function (id) {
+          const link = document.createElement('a');
+          link.className = 'rounded-lg border border-slate-200 bg-white px-2.5 py-1 font-mono text-xs font-semibold text-indigo-700 hover:bg-indigo-50';
+          link.href = '<?= htmlspecialchars(url('/admin.php?view=people&id='), ENT_QUOTES, 'UTF-8') ?>' + encodeURIComponent(String(id));
+          link.textContent = String(id);
+          recentLinks.appendChild(link);
+        });
+      };
+
+      form.closest('form').addEventListener('submit', function () {
+        const id = input.value.trim();
+        if (!/^\d+$/.test(id)) return;
+        const ids = readRecent().filter(function (recentId) { return String(recentId) !== id; });
+        ids.unshift(id);
+        try { localStorage.setItem(storageKey, JSON.stringify(ids.slice(0, 3))); } catch (e) {}
+      });
+
+      clearButton.addEventListener('click', function () {
+        try { localStorage.removeItem(storageKey); } catch (e) {}
+        renderRecent();
+      });
+
+      renderRecent();
     })();
   </script>
   <?php require __DIR__ . '/../app/views/partials/theme_boot.php'; ?>
